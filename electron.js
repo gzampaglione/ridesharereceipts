@@ -176,15 +176,15 @@ async function authorize() {
 
       const tokens = store.get("google-tokens");
       if (tokens && tokens.access_token) {
-        console.log("Found existing tokens, validating with Google API...");
+        console.log("Found existing tokens, testing Gmail API access...");
 
-        // Use Google API client to validate
+        // Test with Gmail API instead
         try {
           oAuth2Client.setCredentials(tokens);
-          const oauth2 = google.oauth2({ version: "v2", auth: oAuth2Client });
-          await oauth2.userinfo.get();
+          const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+          await gmail.users.getProfile({ userId: "me" });
 
-          console.log("Existing tokens are valid");
+          console.log("Existing tokens are valid - Gmail API works!");
           authorizationPromise = null;
           return oAuth2Client;
         } catch (validationError) {
@@ -442,14 +442,27 @@ app.whenReady().then(() => {
   ipcMain.handle("user:get", async () => {
     try {
       const tokens = store.get("google-tokens");
+      console.log("=== USER:GET DEBUG ===");
+      console.log("Tokens in store:", !!tokens);
+
       if (!tokens) {
         console.log("No tokens found");
         return { email: "Not Logged In" };
       }
 
-      console.log("Fetching user info using Google API client...");
+      console.log("Token details:");
+      console.log("- access_token exists:", !!tokens.access_token);
+      console.log("- access_token length:", tokens.access_token?.length);
+      console.log(
+        "- access_token preview:",
+        tokens.access_token?.substring(0, 30) + "..."
+      );
+      console.log("- refresh_token exists:", !!tokens.refresh_token);
+      console.log("- expiry_date:", tokens.expiry_date);
 
-      // Use the Google API client instead of raw fetch
+      console.log("Testing Gmail API access...");
+
+      // Use Gmail API to get user profile (which includes email)
       const credentials = JSON.parse(await fs.readFile("credentials.json"));
       const { client_secret, client_id, redirect_uris } = credentials.web;
       const oAuth2Client = new google.auth.OAuth2(
@@ -460,17 +473,26 @@ app.whenReady().then(() => {
 
       oAuth2Client.setCredentials(tokens);
 
-      const oauth2 = google.oauth2({ version: "v2", auth: oAuth2Client });
-      const userInfo = await oauth2.userinfo.get();
+      const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+      const profile = await gmail.users.getProfile({ userId: "me" });
 
-      console.log("User info retrieved successfully:", userInfo.data.email);
-      return { email: userInfo.data.email };
+      console.log("SUCCESS! Gmail API works!");
+      console.log("Email:", profile.data.emailAddress);
+      console.log("===================");
+      return { email: profile.data.emailAddress };
     } catch (fetchError) {
-      console.error(
-        "Could not fetch user info - exception:",
-        fetchError.message
-      );
-      console.error("Full error:", fetchError);
+      console.error("=== USER:GET ERROR ===");
+      console.error("Error message:", fetchError.message);
+      console.error("Error code:", fetchError.code);
+      console.error("Error status:", fetchError.status);
+      if (fetchError.response?.data) {
+        console.error(
+          "Response data:",
+          JSON.stringify(fetchError.response.data, null, 2)
+        );
+      }
+      console.error("Full error object:", fetchError);
+      console.error("===================");
       return { email: "Error fetching email" };
     }
   });
