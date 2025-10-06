@@ -15,10 +15,15 @@ async function createWindow() {
   win = new BrowserWindow({
     width: 1400,
     height: 900,
+    minWidth: 800,
+    minHeight: 600,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+
+  // Enable auto-resizing to fit content
+  win.setContentSize(1400, 900);
 
   const devServerUrl = "http://localhost:5173";
   const isDev =
@@ -322,8 +327,15 @@ async function syncReceipts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: "v1", auth });
 
-  // Search for both Uber and Lyft receipts
+  // Search for receipts using nested labels
+  // Gmail nested labels use format: "parent/child"
   const queries = [
+    "label:Rideshare/Uber",
+    "label:Rideshare/Lyft",
+    "label:Rideshare/Curb",
+    // Also search the parent label to catch any that aren't nested
+    "label:Rideshare",
+    // Fallback to subject-based search if labels don't exist
     'from:uber.com subject:"Your trip receipt"',
     'from:lyft.com subject:"ride receipt"',
   ];
@@ -333,47 +345,79 @@ async function syncReceipts() {
   let newReceiptsCount = 0;
 
   for (const query of queries) {
-    const res = await gmail.users.messages.list({
-      userId: "me",
-      q: query,
-      maxResults: 500, // Increased from 10
-    });
+    console.log(`Searching with query: ${query}`);
 
-    const messages = res.data.messages || [];
-
-    for (const message of messages) {
-      if (existingMessageIds.has(message.id)) continue;
-
-      const msgRes = await gmail.users.messages.get({
+    try {
+      const res = await gmail.users.messages.list({
         userId: "me",
-        id: message.id,
-        format: "full",
+        q: query,
+        maxResults: 500,
       });
 
-      const bodyPart = msgRes.data.payload.parts?.find(
-        (p) => p.mimeType === "text/plain"
-      );
+      const messages = res.data.messages || [];
+      console.log(`Found ${messages.length} messages for query: ${query}`);
 
-      if (bodyPart && bodyPart.body.data) {
-        const bodyData = Buffer.from(bodyPart.body.data, "base64").toString();
+      for (const message of messages) {
+        if (existingMessageIds.has(message.id)) continue;
 
-        // Try parsing as Uber or Lyft
-        let parsedData = null;
-        if (query.includes("uber")) {
-          parsedData = parseUberEmail(bodyData);
-        } else if (query.includes("lyft")) {
-          parsedData = parseLyftEmail(bodyData);
-        }
+        const msgRes = await gmail.users.messages.get({
+          userId: "me",
+          id: message.id,
+          format: "full",
+        });
 
-        if (parsedData) {
-          existingReceipts.push({ ...parsedData, messageId: message.id });
-          newReceiptsCount++;
+        const bodyPart = msgRes.data.payload.parts?.find(
+          (p) => p.mimeType === "text/plain"
+        );
+
+        if (bodyPart && bodyPart.body.data) {
+          const bodyData = Buffer.from(bodyPart.body.data, "base64").toString();
+
+          // Determine vendor from query or subject
+          let parsedData = null;
+          const subject =
+            msgRes.data.payload.headers.find((h) => h.name === "Subject")
+              ?.value || "";
+
+          if (
+            query.includes("Uber") ||
+            subject.toLowerCase().includes("uber")
+          ) {
+            parsedData = parseUberEmail(bodyData);
+          } else if (
+            query.includes("Lyft") ||
+            subject.toLowerCase().includes("lyft")
+          ) {
+            parsedData = parseLyftEmail(bodyData);
+          } else if (
+            query.includes("Curb") ||
+            subject.toLowerCase().includes("curb")
+          ) {
+            // Add Curb parsing if needed
+            parsedData = parseUberEmail(bodyData); // Try Uber parser as fallback
+          }
+
+          if (parsedData) {
+            console.log(
+              `Successfully parsed ${parsedData.vendor} receipt from ${parsedData.date}`
+            );
+            existingReceipts.push({ ...parsedData, messageId: message.id });
+            newReceiptsCount++;
+          } else {
+            console.log(`Failed to parse email with subject: ${subject}`);
+          }
         }
       }
+    } catch (queryError) {
+      console.error(`Error with query "${query}":`, queryError.message);
+      // Continue with next query even if this one fails
     }
   }
 
   store.set("receipts", existingReceipts);
+  console.log(
+    `Sync complete: ${newReceiptsCount} new receipts, ${existingReceipts.length} total`
+  );
   return {
     newReceipts: newReceiptsCount,
     totalReceipts: existingReceipts.length,
