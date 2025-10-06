@@ -183,6 +183,17 @@ async function syncReceipts() {
   // Get parser preference from settings
   const parserPreference = store.get("parserPreference", "regex-first");
 
+  // TEST MODE: Limit emails for faster testing
+  // Check settings first, then environment variable
+  let testModeLimit = store.get("testModeLimit", 0);
+  if (!testModeLimit && process.env.TEST_MODE_LIMIT) {
+    testModeLimit = parseInt(process.env.TEST_MODE_LIMIT);
+  }
+
+  if (testModeLimit && testModeLimit > 0) {
+    console.log(`⚠️  TEST MODE: Limiting to ${testModeLimit} emails per label`);
+  }
+
   const queries = [
     "label:Rideshare/Uber",
     "label:Rideshare/Lyft",
@@ -194,6 +205,7 @@ async function syncReceipts() {
   const existingMessageIds = new Set(existingReceipts.map((r) => r.messageId));
   let newReceiptsCount = 0;
   let processedCount = 0;
+  let skippedCount = 0;
 
   for (const query of queries) {
     console.log(`\n🔍 ${query}`);
@@ -214,16 +226,31 @@ async function syncReceipts() {
         const res = await gmail.users.messages.list({
           userId: "me",
           q: query,
-          maxResults: 500,
+          maxResults: testModeLimit && testModeLimit > 0 ? testModeLimit : 500,
           pageToken: pageToken,
         });
 
         const messages = res.data.messages || [];
         allMessages = allMessages.concat(messages);
+
+        // If test mode is enabled, stop after reaching the limit
+        if (
+          testModeLimit &&
+          testModeLimit > 0 &&
+          allMessages.length >= testModeLimit
+        ) {
+          allMessages = allMessages.slice(0, testModeLimit);
+          break;
+        }
+
         pageToken = res.data.nextPageToken;
       } while (pageToken);
 
-      console.log(`  Found: ${allMessages.length}`);
+      console.log(
+        `  Found: ${allMessages.length}${
+          testModeLimit && testModeLimit > 0 ? " (test mode limited)" : ""
+        }`
+      );
 
       if (win) {
         win.webContents.send("sync-progress", {
@@ -326,14 +353,20 @@ async function syncReceipts() {
             }
           } else {
             // Log skipped non-receipt emails
-            if (subject && i < 10) {
-              // Only log first 10 to avoid spam
+            skippedCount++;
+            if (skippedCount <= 5) {
+              // Only log first 5 to avoid spam
               console.log(`  ⊘ Skipped non-receipt: "${subject}"`);
             }
           }
         }
         processedCount++;
       }
+
+      console.log(
+        `  ✓ Query complete: ${allMessages.length} emails checked, ${skippedCount} non-receipts skipped`
+      );
+      skippedCount = 0; // Reset for next query
     } catch (queryError) {
       console.error(`Error with "${query}":`, queryError.message);
       if (win) {
@@ -456,6 +489,15 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:setGeminiKey", (event, key) => {
     store.set("geminiApiKey", key);
     return key;
+  });
+
+  ipcMain.handle("settings:getTestModeLimit", () => {
+    return store.get("testModeLimit", 0);
+  });
+
+  ipcMain.handle("settings:setTestModeLimit", (event, limit) => {
+    store.set("testModeLimit", limit);
+    return limit;
   });
 
   createWindow();

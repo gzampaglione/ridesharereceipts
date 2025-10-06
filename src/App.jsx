@@ -74,6 +74,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [parserPreference, setParserPreference] = useState("regex-first");
   const [geminiKey, setGeminiKey] = useState("");
+  const [testModeLimit, setTestModeLimit] = useState(0);
 
   // Forward email dialog
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
@@ -138,8 +139,10 @@ function App() {
   const loadSettings = useCallback(async () => {
     const preference = await window.electronAPI.getParserPreference();
     const key = await window.electronAPI.getGeminiKey();
+    const limit = await window.electronAPI.getTestModeLimit();
     setParserPreference(preference);
     setGeminiKey(key);
+    setTestModeLimit(limit);
   }, []);
 
   useEffect(() => {
@@ -273,6 +276,7 @@ function App() {
   const handleSaveSettings = async () => {
     await window.electronAPI.setParserPreference(parserPreference);
     await window.electronAPI.setGeminiKey(geminiKey);
+    await window.electronAPI.setTestModeLimit(testModeLimit);
     setSettingsOpen(false);
     showSnackbar("Settings saved successfully!", "success");
   };
@@ -412,6 +416,20 @@ Billed: ${r.billed ? 'Yes' : 'No'}
               helperText="Get your API key from https://makersuite.google.com/app/apikey"
             />
 
+            <Divider />
+
+            <TextField
+              fullWidth
+              label="Test Mode Limit (0 = disabled)"
+              type="number"
+              value={testModeLimit}
+              onChange={(e) => setTestModeLimit(parseInt(e.target.value) || 0)}
+              helperText="Limit emails per label for faster testing. Set to 0 to process all emails."
+              InputProps={{
+                inputProps: { min: 0, max: 500 }
+              }}
+            />
+
             <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
               <Typography variant="body2" color="text.secondary">
                 <strong>Parser Modes:</strong>
@@ -420,6 +438,17 @@ Billed: ${r.billed ? 'Yes' : 'No'}
                 <br />• <strong>Gemini AI Only:</strong> AI-powered parsing (requires API key, slower but more flexible)
               </Typography>
             </Paper>
+
+            {testModeLimit > 0 && (
+              <Paper sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
+                <Typography variant="body2" fontWeight="bold">
+                  ⚠️ Test Mode Active
+                </Typography>
+                <Typography variant="body2">
+                  Only {testModeLimit} emails per label will be processed. Disable for production use!
+                </Typography>
+              </Paper>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
