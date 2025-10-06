@@ -176,29 +176,20 @@ async function authorize() {
 
       const tokens = store.get("google-tokens");
       if (tokens && tokens.access_token) {
-        console.log("Found existing tokens, validating...");
+        console.log("Found existing tokens, validating with Google API...");
 
-        // Try to validate the token by making a test API call
+        // Use Google API client to validate
         try {
-          const testResponse = await fetch(
-            `https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token=${tokens.access_token}`
-          );
+          oAuth2Client.setCredentials(tokens);
+          const oauth2 = google.oauth2({ version: "v2", auth: oAuth2Client });
+          await oauth2.userinfo.get();
 
-          if (testResponse.ok) {
-            console.log("Existing tokens are valid");
-            oAuth2Client.setCredentials(tokens);
-            authorizationPromise = null;
-            return oAuth2Client;
-          } else {
-            console.log(
-              "Existing tokens are invalid (status:",
-              testResponse.status,
-              "), deleting and re-authenticating"
-            );
-            store.delete("google-tokens");
-          }
+          console.log("Existing tokens are valid");
+          authorizationPromise = null;
+          return oAuth2Client;
         } catch (validationError) {
-          console.error("Token validation failed:", validationError);
+          console.error("Token validation failed:", validationError.message);
+          console.log("Deleting invalid tokens and re-authenticating");
           store.delete("google-tokens");
         }
       }
@@ -456,29 +447,24 @@ app.whenReady().then(() => {
         return { email: "Not Logged In" };
       }
 
-      console.log("Fetching user info with access token...");
-      console.log("Token exists:", !!tokens.access_token);
+      console.log("Fetching user info using Google API client...");
 
-      const response = await fetch(
-        `https://www.googleapis.com/oauth2/v1/userinfo?alt=json&access_token=${tokens.access_token}`
+      // Use the Google API client instead of raw fetch
+      const credentials = JSON.parse(await fs.readFile("credentials.json"));
+      const { client_secret, client_id, redirect_uris } = credentials.web;
+      const oAuth2Client = new google.auth.OAuth2(
+        client_id,
+        client_secret,
+        redirect_uris[0]
       );
 
-      console.log("Response status:", response.status);
+      oAuth2Client.setCredentials(tokens);
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(
-          "Failed to fetch user info:",
-          response.status,
-          response.statusText
-        );
-        console.error("Error details:", errorText);
-        return { email: "Error fetching email" };
-      }
+      const oauth2 = google.oauth2({ version: "v2", auth: oAuth2Client });
+      const userInfo = await oauth2.userinfo.get();
 
-      const userInfo = await response.json();
-      console.log("User info retrieved successfully:", userInfo.email);
-      return { email: userInfo.email };
+      console.log("User info retrieved successfully:", userInfo.data.email);
+      return { email: userInfo.data.email };
     } catch (fetchError) {
       console.error(
         "Could not fetch user info - exception:",
