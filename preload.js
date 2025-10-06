@@ -1,11 +1,8 @@
-// preload.js - Enhanced version
-
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   authenticate: () => ipcRenderer.invoke("auth:google"),
   clearAuth: () => ipcRenderer.invoke("auth:clear"),
-  debugAuth: () => ipcRenderer.invoke("auth:debug"),
   syncReceipts: () => ipcRenderer.invoke("receipts:sync"),
   getReceipts: () => ipcRenderer.invoke("receipts:get"),
   updateReceipt: (messageId, updates) =>
@@ -16,9 +13,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getCategories: () => ipcRenderer.invoke("categories:get"),
   addCategory: (category) => ipcRenderer.invoke("categories:add", category),
 
-  // Progress listeners
-  onSyncProgress: (callback) =>
-    ipcRenderer.on("sync-progress", (event, data) => callback(data)),
-  onSyncComplete: (callback) =>
-    ipcRenderer.on("sync-complete", () => callback()),
+  // ADD THESE LISTENERS FOR THE SYNC LOG
+  onSyncLogStart: (callback) =>
+    ipcRenderer.on("sync-log-start", () => callback()),
+  onSyncLogUpdate: (callback) =>
+    ipcRenderer.on("sync-log-update", (event, data) => callback(data)),
 });
