@@ -1,24 +1,4 @@
-<div className="content-area">
-                    <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>
-                                    <input 
-                                        type="checkbox" 
-                                        checked={selectedReceipts.size === filteredReceipts.length && filteredReceipts.length > 0}
-                                        onChange={handleSelectAll}
-                                    />
-                                </th>
-                                <th>Date</th>
-                                <th>Vendor</th>
-                                <th>Total</th>
-                                <th>Tip</th>
-                                <th>Start Location</th>
-                                <th>End Location</th>
-                                <th>Category</th>
-                                <th>Billed</th>
-                            </tr>import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import './App.css';
 
 function App() {
@@ -31,7 +11,7 @@ function App() {
     const [selectedReceipts, setSelectedReceipts] = useState(new Set());
     const [categories, setCategories] = useState([]);
     const [newCategory, setNewCategory] = useState('');
-    
+
     // Filters
     const [filters, setFilters] = useState({
         startDate: '',
@@ -42,32 +22,27 @@ function App() {
         billedStatus: 'all'
     });
 
-    // Get unique locations from receipts
-    const getUniqueLocations = () => {
+    // Get unique locations from receipts, memoized for performance
+    const uniqueLocations = useMemo(() => {
         const locations = new Set();
         receipts.forEach(r => {
             if (r.startLocation?.city) locations.add(`${r.startLocation.city}, ${r.startLocation.state || ''}`);
             if (r.endLocation?.city) locations.add(`${r.endLocation.city}, ${r.endLocation.state || ''}`);
         });
         return Array.from(locations).sort();
-    };
+    }, [receipts]);
 
     useEffect(() => {
         const initialize = async () => {
             try {
                 console.log("Checking for existing authentication...");
-                // First, try to get user info (will use existing tokens if available)
                 const initialUser = await window.electronAPI.getUser();
                 console.log("Initial user check:", initialUser);
-                
-                // If not logged in, trigger authentication
+
                 if (!initialUser || !initialUser.email || initialUser.email === "Not Logged In" || initialUser.email === "Error fetching email") {
                     console.log("No valid authentication found, starting OAuth flow...");
                     await window.electronAPI.authenticate();
-                    
-                    // Give it a moment for tokens to be saved
                     await new Promise(resolve => setTimeout(resolve, 1000));
-                    
                     const authenticatedUser = await window.electronAPI.getUser();
                     console.log("User after authentication:", authenticatedUser);
                     setUser(authenticatedUser);
@@ -75,7 +50,7 @@ function App() {
                     console.log("Already authenticated:", initialUser.email);
                     setUser(initialUser);
                 }
-                
+
                 const initialReceipts = await window.electronAPI.getReceipts();
                 const initialCategories = await window.electronAPI.getCategories();
                 setReceipts(initialReceipts);
@@ -92,69 +67,58 @@ function App() {
     }, []);
 
     useEffect(() => {
+        const applyFilters = () => {
+            let filtered = [...receipts];
+
+            if (filters.startDate) {
+                filtered = filtered.filter(r => new Date(r.date) >= new Date(filters.startDate));
+            }
+            if (filters.endDate) {
+                filtered = filtered.filter(r => new Date(r.date) <= new Date(filters.endDate));
+            }
+
+            if (filters.location) {
+                const loc = filters.location.toLowerCase();
+                filtered = filtered.filter(r =>
+                    r.startLocation?.city?.toLowerCase().includes(loc) ||
+                    r.endLocation?.city?.toLowerCase().includes(loc) ||
+                    r.startLocation?.state?.toLowerCase().includes(loc) ||
+                    r.endLocation?.state?.toLowerCase().includes(loc)
+                );
+            }
+
+            const activeVendors = Object.keys(filters.vendors).filter(v => filters.vendors[v]);
+            if (activeVendors.length > 0) {
+                filtered = filtered.filter(r => activeVendors.includes(r.vendor));
+            }
+
+            if (filters.category !== 'all') {
+                filtered = filtered.filter(r => r.category === filters.category);
+            }
+
+            if (filters.billedStatus !== 'all') {
+                const isBilled = filters.billedStatus === 'billed';
+                filtered = filtered.filter(r => r.billed === isBilled);
+            }
+
+            setFilteredReceipts(filtered);
+        };
+
         applyFilters();
     }, [receipts, filters]);
-
-    const applyFilters = () => {
-        let filtered = [...receipts];
-
-        // Date range filter
-        if (filters.startDate) {
-            filtered = filtered.filter(r => new Date(r.date) >= new Date(filters.startDate));
-        }
-        if (filters.endDate) {
-            filtered = filtered.filter(r => new Date(r.date) <= new Date(filters.endDate));
-        }
-
-        // Location filter
-        if (filters.location) {
-            const loc = filters.location.toLowerCase();
-            filtered = filtered.filter(r => 
-                r.startLocation?.city?.toLowerCase().includes(loc) ||
-                r.endLocation?.city?.toLowerCase().includes(loc) ||
-                r.startLocation?.state?.toLowerCase().includes(loc) ||
-                r.endLocation?.state?.toLowerCase().includes(loc)
-            );
-        }
-
-        // Vendor filter (checkboxes)
-        const activeVendors = Object.keys(filters.vendors).filter(v => filters.vendors[v]);
-        if (activeVendors.length > 0) {
-            filtered = filtered.filter(r => activeVendors.includes(r.vendor));
-        }
-
-        // Category filter
-        if (filters.category !== 'all') {
-            filtered = filtered.filter(r => r.category === filters.category);
-        }
-
-        // Billed status filter
-        if (filters.billedStatus !== 'all') {
-            const isBilled = filters.billedStatus === 'billed';
-            filtered = filtered.filter(r => r.billed === isBilled);
-        }
-
-        setFilteredReceipts(filtered);
-    };
 
     const handleReauth = async () => {
         setLoading(true);
         try {
             console.log("Clearing existing auth...");
             await window.electronAPI.clearAuth();
-            
             console.log("Starting new authentication...");
             await window.electronAPI.authenticate();
-            
-            // Wait a bit for tokens to be saved and server to close
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
             console.log("Fetching user info after auth...");
             const newUser = await window.electronAPI.getUser();
             console.log("New user info:", newUser);
-            
             setUser(newUser);
-            
             if (newUser && newUser.email && newUser.email !== "Not Logged In") {
                 alert("Re-authentication successful! Logged in as: " + newUser.email);
             } else {
@@ -171,15 +135,12 @@ function App() {
     const handleSync = async () => {
         setSyncing(true);
         try {
-            // First refresh user info
             const currentUser = await window.electronAPI.getUser();
             setUser(currentUser);
-            
             if (!currentUser || currentUser.email === "Not Logged In") {
                 alert("Please authenticate first by clicking 'Re-authenticate'");
                 return;
             }
-            
             console.log("Starting receipt sync...");
             const result = await window.electronAPI.syncReceipts();
             alert(`Sync complete! ${result.newReceipts} new receipts found. Total: ${result.totalReceipts}`);
@@ -241,7 +202,7 @@ function App() {
     };
 
     const exportToCSV = () => {
-        const receiptsToExport = selectedReceipts.size > 0 
+        const receiptsToExport = selectedReceipts.size > 0
             ? filteredReceipts.filter(r => selectedReceipts.has(r.messageId))
             : filteredReceipts;
 
@@ -296,43 +257,43 @@ function App() {
                         <span>{Math.round((syncProgress.current / syncProgress.total) * 100)}%</span>
                     </div>
                     <div className="progress-bar-container">
-                        <div 
-                            className="progress-bar-fill" 
-                            style={{width: `${(syncProgress.current / syncProgress.total) * 100}%`}}
+                        <div
+                            className="progress-bar-fill"
+                            style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
                         ></div>
                     </div>
                 </div>
             )}
 
-            <div className="main-content">
+            <main className="main-content">
                 <aside className="sidebar">
                     <div className="filters-section">
                         <h3>Filters</h3>
                         <div className="filters-grid">
                             <div className="filter-group">
                                 <label>Start Date:</label>
-                                <input 
-                                    type="date" 
+                                <input
+                                    type="date"
                                     value={filters.startDate}
-                                    onChange={e => setFilters({...filters, startDate: e.target.value})}
+                                    onChange={e => setFilters({ ...filters, startDate: e.target.value })}
                                 />
                             </div>
                             <div className="filter-group">
                                 <label>End Date:</label>
-                                <input 
-                                    type="date" 
+                                <input
+                                    type="date"
                                     value={filters.endDate}
-                                    onChange={e => setFilters({...filters, endDate: e.target.value})}
+                                    onChange={e => setFilters({ ...filters, endDate: e.target.value })}
                                 />
                             </div>
                             <div className="filter-group">
                                 <label>Location:</label>
-                                <select 
+                                <select
                                     value={filters.location}
-                                    onChange={e => setFilters({...filters, location: e.target.value})}
+                                    onChange={e => setFilters({ ...filters, location: e.target.value })}
                                 >
                                     <option value="">All Locations</option>
-                                    {getUniqueLocations().map(loc => (
+                                    {uniqueLocations.map(loc => (
                                         <option key={loc} value={loc}>{loc}</option>
                                     ))}
                                 </select>
@@ -341,29 +302,29 @@ function App() {
                                 <label>Vendors:</label>
                                 <div className="checkbox-group">
                                     <div className="checkbox-item">
-                                        <input 
-                                            type="checkbox" 
+                                        <input
+                                            type="checkbox"
                                             id="vendor-uber"
                                             checked={filters.vendors.Uber}
-                                            onChange={e => setFilters({...filters, vendors: {...filters.vendors, Uber: e.target.checked}})}
+                                            onChange={e => setFilters({ ...filters, vendors: { ...filters.vendors, Uber: e.target.checked } })}
                                         />
                                         <label htmlFor="vendor-uber">Uber</label>
                                     </div>
                                     <div className="checkbox-item">
-                                        <input 
-                                            type="checkbox" 
+                                        <input
+                                            type="checkbox"
                                             id="vendor-lyft"
                                             checked={filters.vendors.Lyft}
-                                            onChange={e => setFilters({...filters, vendors: {...filters.vendors, Lyft: e.target.checked}})}
+                                            onChange={e => setFilters({ ...filters, vendors: { ...filters.vendors, Lyft: e.target.checked } })}
                                         />
                                         <label htmlFor="vendor-lyft">Lyft</label>
                                     </div>
                                     <div className="checkbox-item">
-                                        <input 
-                                            type="checkbox" 
+                                        <input
+                                            type="checkbox"
                                             id="vendor-curb"
                                             checked={filters.vendors.Curb}
-                                            onChange={e => setFilters({...filters, vendors: {...filters.vendors, Curb: e.target.checked}})}
+                                            onChange={e => setFilters({ ...filters, vendors: { ...filters.vendors, Curb: e.target.checked } })}
                                         />
                                         <label htmlFor="vendor-curb">Curb</label>
                                     </div>
@@ -371,7 +332,7 @@ function App() {
                             </div>
                             <div className="filter-group">
                                 <label>Category:</label>
-                                <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
+                                <select value={filters.category} onChange={e => setFilters({ ...filters, category: e.target.value })}>
                                     <option value="all">All</option>
                                     {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                     <option value="">Uncategorized</option>
@@ -379,14 +340,14 @@ function App() {
                             </div>
                             <div className="filter-group">
                                 <label>Status:</label>
-                                <select value={filters.billedStatus} onChange={e => setFilters({...filters, billedStatus: e.target.value})}>
+                                <select value={filters.billedStatus} onChange={e => setFilters({ ...filters, billedStatus: e.target.value })}>
                                     <option value="all">All</option>
                                     <option value="billed">Billed</option>
                                     <option value="unbilled">Not Billed</option>
                                 </select>
                             </div>
                         </div>
-                        <button onClick={() => setFilters({startDate: '', endDate: '', location: '', vendors: { Uber: true, Lyft: true, Curb: true }, category: 'all', billedStatus: 'all'})}>
+                        <button onClick={() => setFilters({ startDate: '', endDate: '', location: '', vendors: { Uber: true, Lyft: true, Curb: true }, category: 'all', billedStatus: 'all' })}>
                             Clear Filters
                         </button>
                     </div>
@@ -403,8 +364,8 @@ function App() {
                             <button onClick={exportToCSV}>Export to CSV</button>
                         </div>
                         <div className="category-manager">
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 placeholder="New category name"
                                 value={newCategory}
                                 onChange={e => setNewCategory(e.target.value)}
@@ -416,57 +377,58 @@ function App() {
                 </aside>
 
                 <div className="content-area">
-                <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>
-                                <input 
-                                    type="checkbox" 
-                                    checked={selectedReceipts.size === filteredReceipts.length && filteredReceipts.length > 0}
-                                    onChange={handleSelectAll}
-                                />
-                            </th>
-                            <th>Date</th>
-                            <th>Vendor</th>
-                            <th>Total</th>
-                            <th>Tip</th>
-                            <th>Start Location</th>
-                            <th>End Location</th>
-                            <th>Category</th>
-                            <th>Billed</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {filteredReceipts.length > 0 ? (
-                            filteredReceipts
-                                .sort((a, b) => new Date(b.date) - new Date(a.date))
-                                .map((receipt) => (
-                                    <tr key={receipt.messageId} className={selectedReceipts.has(receipt.messageId) ? 'selected' : ''}>
-                                        <td>
-                                            <input 
-                                                type="checkbox" 
-                                                checked={selectedReceipts.has(receipt.messageId)}
-                                                onChange={() => handleSelectReceipt(receipt.messageId)}
-                                            />
-                                        </td>
-                                        <td>{new Date(receipt.date).toLocaleDateString()}</td>
-                                        <td>{receipt.vendor}</td>
-                                        <td>${receipt.total.toFixed(2)}</td>
-                                        <td>${receipt.tip.toFixed(2)}</td>
-                                        <td>{receipt.startLocation?.city || 'N/A'}, {receipt.startLocation?.state || ''}</td>
-                                        <td>{receipt.endLocation?.city || 'N/A'}, {receipt.endLocation?.state || ''}</td>
-                                        <td>{receipt.category || '-'}</td>
-                                        <td>{receipt.billed ? '✓' : '-'}</td>
-                                    </tr>
-                                ))
-                        ) : (
+                    <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
+                    <table>
+                        <thead>
                             <tr>
-                                <td colSpan="9">No receipts found. Click "Sync Receipts" to get started.</td>
+                                <th>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedReceipts.size === filteredReceipts.length && filteredReceipts.length > 0}
+                                        onChange={handleSelectAll}
+                                    />
+                                </th>
+                                <th>Date</th>
+                                <th>Vendor</th>
+                                <th>Total</th>
+                                <th>Tip</th>
+                                <th>Start Location</th>
+                                <th>End Location</th>
+                                <th>Category</th>
+                                <th>Billed</th>
                             </tr>
-                        )}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {filteredReceipts.length > 0 ? (
+                                filteredReceipts
+                                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                                    .map((receipt) => (
+                                        <tr key={receipt.messageId} className={selectedReceipts.has(receipt.messageId) ? 'selected' : ''}>
+                                            <td>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedReceipts.has(receipt.messageId)}
+                                                    onChange={() => handleSelectReceipt(receipt.messageId)}
+                                                />
+                                            </td>
+                                            <td>{new Date(receipt.date).toLocaleDateString()}</td>
+                                            <td>{receipt.vendor}</td>
+                                            <td>${receipt.total.toFixed(2)}</td>
+                                            <td>${receipt.tip.toFixed(2)}</td>
+                                            <td>{receipt.startLocation?.city || 'N/A'}, {receipt.startLocation?.state || ''}</td>
+                                            <td>{receipt.endLocation?.city || 'N/A'}, {receipt.endLocation?.state || ''}</td>
+                                            <td>{receipt.category || '-'}</td>
+                                            <td>{receipt.billed ? '✓' : '-'}</td>
+                                        </tr>
+                                    ))
+                            ) : (
+                                <tr>
+                                    <td colSpan="9">No receipts found. Click "Sync Receipts" to get started.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
             </main>
         </div>
     );
