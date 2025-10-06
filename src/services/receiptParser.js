@@ -23,28 +23,35 @@ function parseAddressString(addressString) {
 
 function parseUberEmail(emailBody) {
   try {
+    // More flexible total matching for Uber
     const totalMatch =
-      emailBody.match(/Total\s*\$?([\d.]+)/) ||
+      emailBody.match(/Total[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/You were charged[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/Amount charged[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
       emailBody.match(/\$(\d+\.\d{2})\s*$/m);
-    const total = totalMatch ? parseFloat(totalMatch[1]) : null;
-    if (total === null) return null;
 
-    const tipMatch = emailBody.match(/Tip\s*\$?([\d.]+)/);
-    const tip = tipMatch ? parseFloat(tipMatch[1]) : 0.0;
+    if (!totalMatch) return null;
+    const total = parseFloat(totalMatch[1].replace(/,/g, ""));
+    if (isNaN(total)) return null;
 
+    const tipMatch = emailBody.match(/Tip[:\s]*\$?([\d,]+\.?\d{0,2})/i);
+    const tip = tipMatch ? parseFloat(tipMatch[1].replace(/,/g, "")) : 0.0;
+
+    // More flexible date matching
     const dateMatch = emailBody.match(
-      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/
+      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
     );
     const date = dateMatch ? new Date(dateMatch[0]) : null;
-    if (!date) return null;
+    if (!date || isNaN(date.getTime())) return null;
 
     let startTime = null,
       endTime = null,
       startLocation = null,
       endLocation = null;
 
+    // Enhanced time/address pattern matching
     const timeAddressPattern =
-      /(\d{1,2}:\d{2}\s*(?:AM|PM))([^\n]+?)(?=\d{1,2}:\d{2}\s*(?:AM|PM)|Report lost item|Contact support|$)/gs;
+      /(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))[\s\n]*([^\n]+?)(?=\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)|Report an issue|Contact|Trip fare|$)/gis;
     const matches = [...emailBody.matchAll(timeAddressPattern)];
 
     if (matches.length >= 2) {
@@ -68,45 +75,53 @@ function parseUberEmail(emailBody) {
       parsedBy: "regex",
     };
   } catch (error) {
+    console.error("Uber regex parse error:", error.message);
     return null;
   }
 }
 
 function parseLyftEmail(emailBody) {
   try {
+    // More flexible total matching for Lyft
     const totalMatch =
-      emailBody.match(/\$(\d+\.\d{2})/) ||
-      emailBody.match(/Total.*?\$(\d+\.\d{2})/);
-    const total = totalMatch ? parseFloat(totalMatch[1]) : null;
-    if (total === null) return null;
+      emailBody.match(/Total[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/You paid[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/Amount[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/\$(\d+\.\d{2})/);
 
-    const tipMatch = emailBody.match(/Tip.*?\$(\d+\.\d{2})/i);
-    const tip = tipMatch ? parseFloat(tipMatch[1]) : 0.0;
+    if (!totalMatch) return null;
+    const total = parseFloat(totalMatch[1].replace(/,/g, ""));
+    if (isNaN(total)) return null;
 
+    const tipMatch = emailBody.match(/Tip[:\s]*\$?([\d,]+\.?\d{0,2})/i);
+    const tip = tipMatch ? parseFloat(tipMatch[1].replace(/,/g, "")) : 0.0;
+
+    // More flexible date matching
     const dateMatch = emailBody.match(
-      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/
+      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
     );
     const date = dateMatch ? new Date(dateMatch[0]) : null;
-    if (!date) return null;
+    if (!date || isNaN(date.getTime())) return null;
 
     let startLocation = null,
       endLocation = null,
       startTime = null,
       endTime = null;
 
+    // Enhanced pickup/dropoff matching
     const pickupMatch = emailBody.match(
-      /Pickup\s+(\d{1,2}:\d{2}\s*(?:AM|PM))([^\n]+?)(?=Drop-off|$)/s
+      /(?:Pickup|Picked up)[:\s]*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))?[\s\n]*([^\n]+?)(?=Drop-?off|Dropped|$)/is
     );
     const dropoffMatch = emailBody.match(
-      /Drop-off\s+(\d{1,2}:\d{2}\s*(?:AM|PM))([^\n]+?)(?=Committed|$)/s
+      /(?:Drop-?off|Dropped)[:\s]*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))?[\s\n]*([^\n]+?)(?=Ride time|Driver|Total|$)/is
     );
 
     if (pickupMatch) {
-      startTime = pickupMatch[1].trim();
+      startTime = pickupMatch[1] ? pickupMatch[1].trim() : null;
       startLocation = parseAddressString(pickupMatch[2].trim());
     }
     if (dropoffMatch) {
-      endTime = dropoffMatch[1].trim();
+      endTime = dropoffMatch[1] ? dropoffMatch[1].trim() : null;
       endLocation = parseAddressString(dropoffMatch[2].trim());
     }
 
@@ -124,25 +139,45 @@ function parseLyftEmail(emailBody) {
       parsedBy: "regex",
     };
   } catch (error) {
+    console.error("Lyft regex parse error:", error.message);
     return null;
   }
 }
 
 function parseCurbEmail(emailBody) {
   try {
-    const totalMatch = emailBody.match(/Total[^\$]*\$(\d+\.\d{2})/);
-    const total = totalMatch ? parseFloat(totalMatch[1]) : null;
-    if (total === null) return null;
+    // More flexible total matching for Curb
+    const totalMatch =
+      emailBody.match(/Total[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/Amount[:\s]*\$?([\d,]+\.?\d{0,2})/i) ||
+      emailBody.match(/Fare[:\s]*\$?([\d,]+\.?\d{0,2})/i);
 
-    const tipMatch = emailBody.match(/Tip[^\$]*\$(\d+\.\d{2})/);
-    const tip = tipMatch ? parseFloat(tipMatch[1]) : 0.0;
+    if (!totalMatch) return null;
+    const total = parseFloat(totalMatch[1].replace(/,/g, ""));
+    if (isNaN(total)) return null;
 
-    const dateMatch = emailBody.match(
-      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}/
+    const tipMatch = emailBody.match(/Tip[:\s]*\$?([\d,]+\.?\d{0,2})/i);
+    const tip = tipMatch ? parseFloat(tipMatch[1].replace(/,/g, "")) : 0.0;
+
+    // Try to find full date, otherwise use current year
+    let date = null;
+    const fullDateMatch = emailBody.match(
+      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
     );
-    const currentYear = new Date().getFullYear();
-    const date = dateMatch ? new Date(`${dateMatch[0]}, ${currentYear}`) : null;
-    if (!date) return null;
+
+    if (fullDateMatch) {
+      date = new Date(fullDateMatch[0]);
+    } else {
+      const monthDayMatch = emailBody.match(
+        /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}/i
+      );
+      if (monthDayMatch) {
+        const currentYear = new Date().getFullYear();
+        date = new Date(`${monthDayMatch[0]}, ${currentYear}`);
+      }
+    }
+
+    if (!date || isNaN(date.getTime())) return null;
 
     return {
       vendor: "Curb",
@@ -158,6 +193,7 @@ function parseCurbEmail(emailBody) {
       parsedBy: "regex",
     };
   } catch (error) {
+    console.error("Curb regex parse error:", error.message);
     return null;
   }
 }

@@ -18,7 +18,9 @@ async function parseReceiptWithGemini(emailBody, vendor) {
     console.log(`Attempting Gemini parsing for ${vendor}...`);
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-1.5-flash-latest",
+    });
 
     const prompt = `You are parsing a ${vendor} rideshare receipt email. Extract the following information and return ONLY valid JSON with no markdown formatting:
 

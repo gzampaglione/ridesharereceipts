@@ -271,21 +271,35 @@ async function syncReceipts() {
             msgRes.data.payload.headers.find((h) => h.name === "Subject")
               ?.value || "";
 
+          // Filter by subject line - ONLY process actual receipt emails
           let vendor = null;
-          if (query.includes("Uber") || subject.toLowerCase().includes("uber"))
-            vendor = "Uber";
-          else if (
-            query.includes("Lyft") ||
-            subject.toLowerCase().includes("lyft")
-          )
-            vendor = "Lyft";
-          else if (
-            query.includes("Curb") ||
-            subject.toLowerCase().includes("curb")
-          )
-            vendor = "Curb";
+          let isReceipt = false;
 
-          if (vendor) {
+          // Uber: "Your [day] [time] trip with Uber"
+          if (
+            subject.match(
+              /Your (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) (morning|afternoon|evening|night) trip with Uber/i
+            )
+          ) {
+            vendor = "Uber";
+            isReceipt = true;
+          }
+          // Lyft: "Your ride with [Driver] on [Month] [Day]"
+          else if (
+            subject.match(
+              /Your ride with .+ on (January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}/i
+            )
+          ) {
+            vendor = "Lyft";
+            isReceipt = true;
+          }
+          // Curb: "Your Curb Ride Receipt"
+          else if (subject.toLowerCase() === "your curb ride receipt") {
+            vendor = "Curb";
+            isReceipt = true;
+          }
+
+          if (vendor && isReceipt) {
             const parsedData = await parseReceipt(
               bodyData,
               vendor,
@@ -304,11 +318,17 @@ async function syncReceipts() {
                   total: allMessages.length,
                   current: i + 1,
                   query: query,
-                  message: `Found receipt: ${vendor} - $${parsedData.total.toFixed(
+                  message: `Found receipt: ${vendor} - ${parsedData.total.toFixed(
                     2
                   )} (${i + 1}/${allMessages.length})`,
                 });
               }
+            }
+          } else {
+            // Log skipped non-receipt emails
+            if (subject && i < 10) {
+              // Only log first 10 to avoid spam
+              console.log(`  ⊘ Skipped non-receipt: "${subject}"`);
             }
           }
         }
