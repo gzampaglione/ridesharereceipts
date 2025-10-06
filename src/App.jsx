@@ -3,21 +3,56 @@ import './App.css';
 
 function App() {
     const [receipts, setReceipts] = useState([]);
+    const [filteredReceipts, setFilteredReceipts] = useState([]);
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
+    const [selectedReceipts, setSelectedReceipts] = useState(new Set());
+    const [categories, setCategories] = useState([]);
+    const [newCategory, setNewCategory] = useState('');
+    
+    // Filters
+    const [filters, setFilters] = useState({
+        startDate: '',
+        endDate: '',
+        location: '',
+        vendor: 'all',
+        category: 'all',
+        billedStatus: 'all'
+    });
 
     useEffect(() => {
         const initialize = async () => {
             try {
-                await window.electronAPI.authenticate();
+                console.log("Checking for existing authentication...");
+                // First, try to get user info (will use existing tokens if available)
                 const initialUser = await window.electronAPI.getUser();
+                console.log("Initial user check:", initialUser);
+                
+                // If not logged in, trigger authentication
+                if (!initialUser || !initialUser.email || initialUser.email === "Not Logged In" || initialUser.email === "Error fetching email") {
+                    console.log("No valid authentication found, starting OAuth flow...");
+                    await window.electronAPI.authenticate();
+                    
+                    // Give it a moment for tokens to be saved
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    const authenticatedUser = await window.electronAPI.getUser();
+                    console.log("User after authentication:", authenticatedUser);
+                    setUser(authenticatedUser);
+                } else {
+                    console.log("Already authenticated:", initialUser.email);
+                    setUser(initialUser);
+                }
+                
                 const initialReceipts = await window.electronAPI.getReceipts();
-                setUser(initialUser);
+                const initialCategories = await window.electronAPI.getCategories();
                 setReceipts(initialReceipts);
+                setFilteredReceipts(initialReceipts);
+                setCategories(initialCategories);
             } catch (error) {
                 console.error("Initialization failed:", error);
-                alert("Could not authenticate with Google.");
+                alert("Could not authenticate with Google. Error: " + error.message);
             } finally {
                 setLoading(false);
             }
@@ -25,19 +60,184 @@ function App() {
         initialize();
     }, []);
 
+    useEffect(() => {
+        applyFilters();
+    }, [receipts, filters]);
+
+    const applyFilters = () => {
+        let filtered = [...receipts];
+
+        // Date range filter
+        if (filters.startDate) {
+            filtered = filtered.filter(r => new Date(r.date) >= new Date(filters.startDate));
+        }
+        if (filters.endDate) {
+            filtered = filtered.filter(r => new Date(r.date) <= new Date(filters.endDate));
+        }
+
+        // Location filter
+        if (filters.location) {
+            const loc = filters.location.toLowerCase();
+            filtered = filtered.filter(r => 
+                r.startLocation?.city?.toLowerCase().includes(loc) ||
+                r.endLocation?.city?.toLowerCase().includes(loc) ||
+                r.startLocation?.state?.toLowerCase().includes(loc) ||
+                r.endLocation?.state?.toLowerCase().includes(loc)
+            );
+        }
+
+        // Vendor filter
+        if (filters.vendor !== 'all') {
+            filtered = filtered.filter(r => r.vendor === filters.vendor);
+        }
+
+        // Category filter
+        if (filters.category !== 'all') {
+            filtered = filtered.filter(r => r.category === filters.category);
+        }
+
+        // Billed status filter
+        if (filters.billedStatus !== 'all') {
+            const isBilled = filters.billedStatus === 'billed';
+            filtered = filtered.filter(r => r.billed === isBilled);
+        }
+
+        setFilteredReceipts(filtered);
+    };
+
+    const handleReauth = async () => {
+        setLoading(true);
+        try {
+            console.log("Clearing existing auth...");
+            await window.electronAPI.clearAuth();
+            
+            console.log("Starting new authentication...");
+            await window.electronAPI.authenticate();
+            
+            // Wait a bit for tokens to be saved and server to close
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            console.log("Fetching user info after auth...");
+            const newUser = await window.electronAPI.getUser();
+            console.log("New user info:", newUser);
+            
+            setUser(newUser);
+            
+            if (newUser && newUser.email && newUser.email !== "Not Logged In") {
+                alert("Re-authentication successful! Logged in as: " + newUser.email);
+            } else {
+                alert("Authentication completed but couldn't fetch user info. Please try clicking 'Sync Receipts'.");
+            }
+        } catch (error) {
+            console.error("Re-authentication failed:", error);
+            alert("Re-authentication failed: " + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSync = async () => {
         setSyncing(true);
         try {
+            // First refresh user info
+            const currentUser = await window.electronAPI.getUser();
+            setUser(currentUser);
+            
+            if (!currentUser || currentUser.email === "Not Logged In") {
+                alert("Please authenticate first by clicking 'Re-authenticate'");
+                return;
+            }
+            
+            console.log("Starting receipt sync...");
             const result = await window.electronAPI.syncReceipts();
-            alert(`Sync complete! ${result.newReceipts} new receipts found.`);
+            alert(`Sync complete! ${result.newReceipts} new receipts found. Total: ${result.totalReceipts}`);
             const updatedReceipts = await window.electronAPI.getReceipts();
             setReceipts(updatedReceipts);
         } catch (error) {
             console.error("Sync failed:", error);
-            alert("Sync failed. Please check your connection and try again.");
+            alert("Sync failed: " + error.message + "\n\nPlease check your connection and try re-authenticating.");
         } finally {
             setSyncing(false);
         }
+    };
+
+    const handleSelectReceipt = (messageId) => {
+        const newSelected = new Set(selectedReceipts);
+        if (newSelected.has(messageId)) {
+            newSelected.delete(messageId);
+        } else {
+            newSelected.add(messageId);
+        }
+        setSelectedReceipts(newSelected);
+    };
+
+    const handleSelectAll = () => {
+        if (selectedReceipts.size === filteredReceipts.length) {
+            setSelectedReceipts(new Set());
+        } else {
+            setSelectedReceipts(new Set(filteredReceipts.map(r => r.messageId)));
+        }
+    };
+
+    const handleBulkCategory = async (category) => {
+        if (selectedReceipts.size === 0) {
+            alert("Please select receipts first");
+            return;
+        }
+        await window.electronAPI.bulkUpdateReceipts(Array.from(selectedReceipts), { category });
+        const updated = await window.electronAPI.getReceipts();
+        setReceipts(updated);
+        setSelectedReceipts(new Set());
+    };
+
+    const handleBulkBilled = async (billed) => {
+        if (selectedReceipts.size === 0) {
+            alert("Please select receipts first");
+            return;
+        }
+        await window.electronAPI.bulkUpdateReceipts(Array.from(selectedReceipts), { billed });
+        const updated = await window.electronAPI.getReceipts();
+        setReceipts(updated);
+        setSelectedReceipts(new Set());
+    };
+
+    const handleAddCategory = async () => {
+        if (!newCategory.trim()) return;
+        const updated = await window.electronAPI.addCategory(newCategory.trim());
+        setCategories(updated);
+        setNewCategory('');
+    };
+
+    const exportToCSV = () => {
+        const receiptsToExport = selectedReceipts.size > 0 
+            ? filteredReceipts.filter(r => selectedReceipts.has(r.messageId))
+            : filteredReceipts;
+
+        if (receiptsToExport.length === 0) {
+            alert("No receipts to export");
+            return;
+        }
+
+        const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Category', 'Billed'];
+        const rows = receiptsToExport.map(r => [
+            new Date(r.date).toLocaleDateString(),
+            r.vendor,
+            r.total.toFixed(2),
+            r.tip.toFixed(2),
+            `${r.startLocation?.city || ''} ${r.startLocation?.state || ''}`.trim() || 'N/A',
+            `${r.endLocation?.city || ''} ${r.endLocation?.state || ''}`.trim() || 'N/A',
+            r.category || 'Uncategorized',
+            r.billed ? 'Yes' : 'No'
+        ]);
+
+        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `receipts_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     if (loading) {
@@ -49,41 +249,143 @@ function App() {
             <header className="app-header">
                 <h1>Rideshare Receipts</h1>
                 <div className="header-controls">
-                    <span>Logged in as: <strong>{user?.email}</strong></span>
+                    <span>Logged in as: <strong>{user?.email || 'Not logged in'}</strong></span>
+                    <button onClick={handleReauth}>Re-authenticate</button>
                     <button onClick={handleSync} disabled={syncing}>
                         {syncing ? 'Syncing...' : 'Sync Receipts'}
                     </button>
                 </div>
             </header>
+
+            <div className="filters-section">
+                <h3>Filters</h3>
+                <div className="filters-grid">
+                    <div className="filter-group">
+                        <label>Start Date:</label>
+                        <input 
+                            type="date" 
+                            value={filters.startDate}
+                            onChange={e => setFilters({...filters, startDate: e.target.value})}
+                        />
+                    </div>
+                    <div className="filter-group">
+                        <label>End Date:</label>
+                        <input 
+                            type="date" 
+                            value={filters.endDate}
+                            onChange={e => setFilters({...filters, endDate: e.target.value})}
+                        />
+                    </div>
+                    <div className="filter-group">
+                        <label>Location:</label>
+                        <input 
+                            type="text" 
+                            placeholder="City or State"
+                            value={filters.location}
+                            onChange={e => setFilters({...filters, location: e.target.value})}
+                        />
+                    </div>
+                    <div className="filter-group">
+                        <label>Vendor:</label>
+                        <select value={filters.vendor} onChange={e => setFilters({...filters, vendor: e.target.value})}>
+                            <option value="all">All</option>
+                            <option value="Uber">Uber</option>
+                            <option value="Lyft">Lyft</option>
+                        </select>
+                    </div>
+                    <div className="filter-group">
+                        <label>Category:</label>
+                        <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
+                            <option value="all">All</option>
+                            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            <option value="">Uncategorized</option>
+                        </select>
+                    </div>
+                    <div className="filter-group">
+                        <label>Status:</label>
+                        <select value={filters.billedStatus} onChange={e => setFilters({...filters, billedStatus: e.target.value})}>
+                            <option value="all">All</option>
+                            <option value="billed">Billed</option>
+                            <option value="unbilled">Not Billed</option>
+                        </select>
+                    </div>
+                </div>
+                <button onClick={() => setFilters({startDate: '', endDate: '', location: '', vendor: 'all', category: 'all', billedStatus: 'all'})}>
+                    Clear Filters
+                </button>
+            </div>
+
+            <div className="actions-section">
+                <h3>Bulk Actions ({selectedReceipts.size} selected)</h3>
+                <div className="actions-grid">
+                    <select onChange={e => handleBulkCategory(e.target.value)} value="">
+                        <option value="">Assign Category...</option>
+                        {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <button onClick={() => handleBulkBilled(true)}>Mark as Billed</button>
+                    <button onClick={() => handleBulkBilled(false)}>Mark as Not Billed</button>
+                    <button onClick={exportToCSV}>Export to CSV</button>
+                </div>
+                <div className="category-manager">
+                    <input 
+                        type="text" 
+                        placeholder="New category name"
+                        value={newCategory}
+                        onChange={e => setNewCategory(e.target.value)}
+                        onKeyPress={e => e.key === 'Enter' && handleAddCategory()}
+                    />
+                    <button onClick={handleAddCategory}>Add Category</button>
+                </div>
+            </div>
+
             <main>
+                <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
                 <table>
                     <thead>
                         <tr>
+                            <th>
+                                <input 
+                                    type="checkbox" 
+                                    checked={selectedReceipts.size === filteredReceipts.length && filteredReceipts.length > 0}
+                                    onChange={handleSelectAll}
+                                />
+                            </th>
                             <th>Date</th>
                             <th>Vendor</th>
                             <th>Total</th>
                             <th>Tip</th>
                             <th>Start Location</th>
                             <th>End Location</th>
+                            <th>Category</th>
+                            <th>Billed</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {receipts.length > 0 ? (
-                            receipts
+                        {filteredReceipts.length > 0 ? (
+                            filteredReceipts
                                 .sort((a, b) => new Date(b.date) - new Date(a.date))
-                                .map((receipt, index) => (
-                                    <tr key={receipt.messageId || index}>
+                                .map((receipt) => (
+                                    <tr key={receipt.messageId} className={selectedReceipts.has(receipt.messageId) ? 'selected' : ''}>
+                                        <td>
+                                            <input 
+                                                type="checkbox" 
+                                                checked={selectedReceipts.has(receipt.messageId)}
+                                                onChange={() => handleSelectReceipt(receipt.messageId)}
+                                            />
+                                        </td>
                                         <td>{new Date(receipt.date).toLocaleDateString()}</td>
                                         <td>{receipt.vendor}</td>
                                         <td>${receipt.total.toFixed(2)}</td>
                                         <td>${receipt.tip.toFixed(2)}</td>
-                                        <td>{receipt.startLocation?.city || 'N/A'}</td>
-                                        <td>{receipt.endLocation?.city || 'N/A'}</td>
+                                        <td>{receipt.startLocation?.city || 'N/A'}, {receipt.startLocation?.state || ''}</td>
+                                        <td>{receipt.endLocation?.city || 'N/A'}, {receipt.endLocation?.state || ''}</td>
+                                        <td>{receipt.category || '-'}</td>
+                                        <td>{receipt.billed ? '✓' : '-'}</td>
                                     </tr>
                                 ))
                         ) : (
                             <tr>
-                                <td colSpan="6">No receipts found. Click "Sync Receipts" to get started.</td>
+                                <td colSpan="9">No receipts found. Click "Sync Receipts" to get started.</td>
                             </tr>
                         )}
                     </tbody>
