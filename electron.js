@@ -10,6 +10,7 @@ const { parseReceipt } = require("./src/services/receiptParser");
 
 // Load environment variables
 require("dotenv").config();
+console.log("GEMINI_API_KEY loaded:", process.env.GEMINI_API_KEY); // <-- Add this line for debugging
 
 const store = new Store();
 let win;
