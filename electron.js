@@ -10,7 +10,6 @@ const { parseReceipt } = require("./src/services/receiptParser");
 
 // Load environment variables
 require("dotenv").config();
-console.log("GEMINI_API_KEY loaded:", process.env.GEMINI_API_KEY); // <-- Add this line for debugging
 
 const store = new Store();
 let win;
@@ -181,6 +180,9 @@ async function syncReceipts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: "v1", auth });
 
+  // Get parser preference from settings
+  const parserPreference = store.get("parserPreference", "regex-first");
+
   const queries = [
     "label:Rideshare/Uber",
     "label:Rideshare/Lyft",
@@ -191,9 +193,18 @@ async function syncReceipts() {
   const existingReceipts = store.get("receipts", []);
   const existingMessageIds = new Set(existingReceipts.map((r) => r.messageId));
   let newReceiptsCount = 0;
+  let processedCount = 0;
 
   for (const query of queries) {
     console.log(`\n🔍 ${query}`);
+
+    if (win) {
+      win.webContents.send("sync-progress", {
+        phase: "searching",
+        query: query,
+        message: `Searching: ${query}`,
+      });
+    }
 
     try {
       let allMessages = [];
@@ -216,22 +227,31 @@ async function syncReceipts() {
 
       if (win) {
         win.webContents.send("sync-progress", {
+          phase: "processing",
           total: allMessages.length,
           current: 0,
           query: query,
+          message: `Processing ${allMessages.length} emails from ${query}`,
         });
       }
 
       for (let i = 0; i < allMessages.length; i++) {
         const message = allMessages[i];
 
-        if (existingMessageIds.has(message.id)) continue;
+        if (existingMessageIds.has(message.id)) {
+          processedCount++;
+          continue;
+        }
 
-        if (i % 10 === 0 && win) {
+        if (i % 5 === 0 && win) {
           win.webContents.send("sync-progress", {
+            phase: "processing",
             total: allMessages.length,
             current: i,
             query: query,
+            message: `Processing email ${i + 1}/${
+              allMessages.length
+            } from ${query}`,
           });
         }
 
@@ -266,18 +286,43 @@ async function syncReceipts() {
             vendor = "Curb";
 
           if (vendor) {
-            const parsedData = await parseReceipt(bodyData, vendor, subject);
+            const parsedData = await parseReceipt(
+              bodyData,
+              vendor,
+              subject,
+              parserPreference
+            );
 
             if (parsedData) {
               existingReceipts.push({ ...parsedData, messageId: message.id });
               existingMessageIds.add(message.id);
               newReceiptsCount++;
+
+              if (win) {
+                win.webContents.send("sync-progress", {
+                  phase: "processing",
+                  total: allMessages.length,
+                  current: i + 1,
+                  query: query,
+                  message: `Found receipt: ${vendor} - $${parsedData.total.toFixed(
+                    2
+                  )} (${i + 1}/${allMessages.length})`,
+                });
+              }
             }
           }
         }
+        processedCount++;
       }
     } catch (queryError) {
       console.error(`Error with "${query}":`, queryError.message);
+      if (win) {
+        win.webContents.send("sync-progress", {
+          phase: "error",
+          query: query,
+          message: `Error with ${query}: ${queryError.message}`,
+        });
+      }
     }
   }
 
@@ -287,7 +332,10 @@ async function syncReceipts() {
   );
 
   if (win) {
-    win.webContents.send("sync-complete");
+    win.webContents.send("sync-complete", {
+      newReceipts: newReceiptsCount,
+      totalReceipts: existingReceipts.length,
+    });
   }
 
   return {
@@ -369,6 +417,25 @@ app.whenReady().then(() => {
       store.set("categories", categories);
     }
     return categories;
+  });
+
+  // Settings handlers
+  ipcMain.handle("settings:getParserPreference", () => {
+    return store.get("parserPreference", "regex-first");
+  });
+
+  ipcMain.handle("settings:setParserPreference", (event, preference) => {
+    store.set("parserPreference", preference);
+    return preference;
+  });
+
+  ipcMain.handle("settings:getGeminiKey", () => {
+    return store.get("geminiApiKey", process.env.GEMINI_API_KEY || "");
+  });
+
+  ipcMain.handle("settings:setGeminiKey", (event, key) => {
+    store.set("geminiApiKey", key);
+    return key;
   });
 
   createWindow();

@@ -14,11 +14,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getCategories: () => ipcRenderer.invoke("categories:get"),
   addCategory: (category) => ipcRenderer.invoke("categories:add", category),
 
+  // Settings
+  getParserPreference: () => ipcRenderer.invoke("settings:getParserPreference"),
+  setParserPreference: (preference) =>
+    ipcRenderer.invoke("settings:setParserPreference", preference),
+  getGeminiKey: () => ipcRenderer.invoke("settings:getGeminiKey"),
+  setGeminiKey: (key) => ipcRenderer.invoke("settings:setGeminiKey", key),
+
   // Listeners for sync progress
   onSyncProgress: (callback) =>
     ipcRenderer.on("sync-progress", (event, data) => callback(data)),
   onSyncComplete: (callback) =>
-    ipcRenderer.on("sync-complete", () => callback()),
+    ipcRenderer.on("sync-complete", (event, data) => callback(data)),
 
   // Function to clean up listeners
   removeSyncListeners: () => {

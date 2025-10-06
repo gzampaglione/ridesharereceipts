@@ -18,6 +18,10 @@ import {
 import FilterListIcon from '@mui/icons-material/FilterList';
 import BoltIcon from '@mui/icons-material/Bolt';
 import LabelIcon from '@mui/icons-material/Label';
+import EmailIcon from '@mui/icons-material/Email';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
 
 export default function FiltersSidebar({ 
   filters, 
@@ -27,6 +31,7 @@ export default function FiltersSidebar({
   selectedCount,
   onBulkCategory,
   onBulkBilled,
+  onForwardToEmail,
   onExportCSV,
   newCategory,
   setNewCategory,
@@ -35,10 +40,10 @@ export default function FiltersSidebar({
   return (
     <Box sx={{ width: 350, p: 2, overflowY: 'auto', height: '100%' }}>
       {/* Filters Section */}
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: 2, mb: 2 }} elevation={0}>
         <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-          <FilterListIcon />
-          <Typography variant="h6">Filters</Typography>
+          <FilterListIcon color="primary" />
+          <Typography variant="h6" fontWeight="bold">Filters</Typography>
         </Stack>
 
         <Stack spacing={2}>
@@ -77,7 +82,7 @@ export default function FiltersSidebar({
           </FormControl>
 
           <Box>
-            <Typography variant="subtitle2" mb={1}>Vendors</Typography>
+            <Typography variant="subtitle2" mb={1} fontWeight="600">Vendors</Typography>
             <FormGroup>
               <FormControlLabel
                 control={
@@ -138,6 +143,7 @@ export default function FiltersSidebar({
           <Button 
             variant="outlined"
             fullWidth
+            size="small"
             onClick={() => setFilters({
               startDate: '', 
               endDate: '', 
@@ -153,14 +159,14 @@ export default function FiltersSidebar({
       </Paper>
 
       {/* Bulk Actions Section */}
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ p: 2, mb: 2 }} elevation={0}>
         <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-          <BoltIcon />
-          <Typography variant="h6">Bulk Actions</Typography>
-          <Typography variant="caption" color="text.secondary">
-            ({selectedCount} selected)
-          </Typography>
+          <BoltIcon color="primary" />
+          <Typography variant="h6" fontWeight="bold">Bulk Actions</Typography>
         </Stack>
+        <Typography variant="caption" color="text.secondary" display="block" mb={2}>
+          {selectedCount} receipt{selectedCount !== 1 ? 's' : ''} selected
+        </Typography>
 
         <Stack spacing={1.5}>
           <FormControl size="small" fullWidth>
@@ -179,7 +185,9 @@ export default function FiltersSidebar({
 
           <Button 
             variant="contained" 
-            fullWidth 
+            fullWidth
+            size="small"
+            startIcon={<CheckCircleIcon />}
             onClick={() => onBulkBilled(true)}
             disabled={selectedCount === 0}
           >
@@ -188,17 +196,35 @@ export default function FiltersSidebar({
 
           <Button 
             variant="outlined" 
-            fullWidth 
+            fullWidth
+            size="small"
+            startIcon={<CancelIcon />}
             onClick={() => onBulkBilled(false)}
             disabled={selectedCount === 0}
           >
             Mark as Not Billed
           </Button>
 
+          <Divider sx={{ my: 1 }} />
+
           <Button 
             variant="contained" 
             color="secondary"
-            fullWidth 
+            fullWidth
+            size="small"
+            startIcon={<EmailIcon />}
+            onClick={onForwardToEmail}
+            disabled={selectedCount === 0}
+          >
+            Forward to Email
+          </Button>
+
+          <Button 
+            variant="contained" 
+            color="success"
+            fullWidth
+            size="small"
+            startIcon={<FileDownloadIcon />}
             onClick={onExportCSV}
           >
             Export to CSV
@@ -207,10 +233,10 @@ export default function FiltersSidebar({
       </Paper>
 
       {/* Category Management Section */}
-      <Paper sx={{ p: 2 }}>
+      <Paper sx={{ p: 2 }} elevation={0}>
         <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-          <LabelIcon />
-          <Typography variant="h6">Manage Categories</Typography>
+          <LabelIcon color="primary" />
+          <Typography variant="h6" fontWeight="bold">Manage Categories</Typography>
         </Stack>
 
         <Stack direction="row" spacing={1}>
@@ -222,7 +248,7 @@ export default function FiltersSidebar({
             onKeyPress={e => e.key === 'Enter' && onAddCategory()}
             fullWidth
           />
-          <Button variant="contained" onClick={onAddCategory}>
+          <Button variant="contained" onClick={onAddCategory} size="small">
             Add
           </Button>
         </Stack>

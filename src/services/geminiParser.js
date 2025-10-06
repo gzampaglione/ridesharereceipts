@@ -1,17 +1,23 @@
 // src/services/geminiParser.js
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const Store = require("electron-store");
+const store = new Store();
 
 async function parseReceiptWithGemini(emailBody, vendor) {
-  if (!process.env.GEMINI_API_KEY) {
-    console.log("No Gemini API key found, skipping AI parsing");
+  // Try to get API key from store first, then fall back to environment variable
+  const apiKey = store.get("geminiApiKey") || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    console.log(
+      "No Gemini API key found in settings or environment, skipping AI parsing"
+    );
     return null;
   }
 
   try {
     console.log(`Attempting Gemini parsing for ${vendor}...`);
 
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `You are parsing a ${vendor} rideshare receipt email. Extract the following information and return ONLY valid JSON with no markdown formatting:

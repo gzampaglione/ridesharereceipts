@@ -18,12 +18,25 @@ import {
   IconButton,
   Stack,
   Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Chip,
+  Divider,
 } from "@mui/material";
 import { lightTheme, darkTheme } from "./theme";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
 import Brightness7Icon from "@mui/icons-material/Brightness7";
 import SyncIcon from "@mui/icons-material/Sync";
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import SettingsIcon from '@mui/icons-material/Settings';
+import EmailIcon from '@mui/icons-material/Email';
 
 import ReceiptsDataGrid from "./components/ReceiptsDataGrid";
 import FiltersSidebar from "./components/FiltersSidebar";
@@ -34,13 +47,17 @@ const modalStyle = {
   top: '50%',
   left: '50%',
   transform: 'translate(-50%, -50%)',
-  width: 600,
+  width: 700,
+  maxWidth: '90vw',
   bgcolor: 'background.paper',
-  border: '2px solid #000',
   boxShadow: 24,
-  p: 4,
+  borderRadius: 2,
+  p: 0,
+  maxHeight: '80vh',
+  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
 };
-
 
 function App() {
   const [receipts, setReceipts] = useState([]);
@@ -48,10 +65,19 @@ function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [syncLogs, setSyncLogs] = useState([]);
+  const [syncProgress, setSyncProgress] = useState({ phase: 'idle', message: '' });
   const [selectedReceipts, setSelectedReceipts] = useState(new Set());
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState("");
+
+  // Settings dialog
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [parserPreference, setParserPreference] = useState("regex-first");
+  const [geminiKey, setGeminiKey] = useState("");
+
+  // Forward email dialog
+  const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
+  const [forwardEmail, setForwardEmail] = useState("");
 
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "info" });
 
@@ -109,6 +135,13 @@ function App() {
     setCategories(initialCategories);
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    const preference = await window.electronAPI.getParserPreference();
+    const key = await window.electronAPI.getGeminiKey();
+    setParserPreference(preference);
+    setGeminiKey(key);
+  }, []);
+
   useEffect(() => {
     const initialize = async () => {
       setLoading(true);
@@ -122,6 +155,7 @@ function App() {
           setUser(initialUser);
         }
         await loadData();
+        await loadSettings();
       } catch (error) {
         console.error("Initialization failed:", error);
         showSnackbar("Could not authenticate with Google: " + error.message, "error");
@@ -130,38 +164,28 @@ function App() {
       }
     };
     initialize();
-  }, [loadData]);
+  }, [loadData, loadSettings]);
 
   // IPC listeners for sync progress
   useEffect(() => {
     const handleProgress = (data) => {
-        setSyncLogs(prevLogs => {
-            const existingLogIndex = prevLogs.findIndex(log => log.id === data.query);
-            if (existingLogIndex !== -1) {
-                const newLogs = [...prevLogs];
-                newLogs[existingLogIndex] = { ...newLogs[existingLogIndex], status: `Processing ${data.current}/${data.total}` };
-                return newLogs;
-            } else {
-                return [...prevLogs, { id: data.query, subject: `Query: ${data.query}`, status: `Processing ${data.current}/${data.total}` }];
-            }
-        });
+      setSyncProgress(data);
     };
 
-    const handleComplete = () => {
-        setSyncing(false);
-        setSyncLogs([]);
-        loadData();
-        showSnackbar("Sync complete!", "success");
+    const handleComplete = (data) => {
+      setSyncing(false);
+      setSyncProgress({ phase: 'complete', message: 'Sync complete!' });
+      loadData();
+      showSnackbar(`Sync complete! ${data.newReceipts} new receipts added.`, "success");
     };
 
     window.electronAPI.onSyncProgress(handleProgress);
     window.electronAPI.onSyncComplete(handleComplete);
 
     return () => {
-        window.electronAPI.removeSyncListeners();
+      window.electronAPI.removeSyncListeners();
     };
   }, [loadData]);
-
 
   useEffect(() => {
     let filtered = [...receipts];
@@ -170,7 +194,7 @@ function App() {
     }
     if (filters.endDate) {
       const endDate = new Date(filters.endDate);
-      endDate.setHours(23, 59, 59, 999); // Include the entire end day
+      endDate.setHours(23, 59, 59, 999);
       filtered = filtered.filter(r => new Date(r.date) <= endDate);
     }
     if (filters.location) {
@@ -211,14 +235,14 @@ function App() {
 
   const handleSync = async () => {
     setSyncing(true);
-    setSyncLogs([]);
+    setSyncProgress({ phase: 'starting', message: 'Starting sync...' });
     try {
-      const result = await window.electronAPI.syncReceipts();
-      showSnackbar(`${result.newReceipts} new receipts found.`, "success");
+      await window.electronAPI.syncReceipts();
     } catch (error) {
       console.error("Sync failed:", error);
       showSnackbar("Sync failed: " + error.message, "error");
       setSyncing(false);
+      setSyncProgress({ phase: 'idle', message: '' });
     }
   };
 
@@ -241,26 +265,77 @@ function App() {
     showSnackbar(`Category "${newCategory.trim()}" added.`, "success");
   };
 
+  const handleOpenSettings = async () => {
+    await loadSettings();
+    setSettingsOpen(true);
+  };
+
+  const handleSaveSettings = async () => {
+    await window.electronAPI.setParserPreference(parserPreference);
+    await window.electronAPI.setGeminiKey(geminiKey);
+    setSettingsOpen(false);
+    showSnackbar("Settings saved successfully!", "success");
+  };
+
+  const handleForwardToEmail = () => {
+    if (selectedReceipts.size === 0) {
+      showSnackbar("Please select one or more receipts first.", "warning");
+      return;
+    }
+    setForwardDialogOpen(true);
+  };
+
+  const handleSendForwardEmail = () => {
+    if (!forwardEmail.trim()) {
+      showSnackbar("Please enter an email address.", "warning");
+      return;
+    }
+
+    const receiptsToForward = filteredReceipts.filter(r => selectedReceipts.has(r.id || r.messageId));
+    
+    // Create email body
+    const emailBody = receiptsToForward.map(r => {
+      return `Date: ${new Date(r.date).toLocaleDateString()}
+Vendor: ${r.vendor}
+Total: $${r.total.toFixed(2)}
+Tip: $${r.tip.toFixed(2)}
+From: ${r.startLocation?.address || 'N/A'}
+To: ${r.endLocation?.address || 'N/A'}
+Category: ${r.category || 'Uncategorized'}
+Billed: ${r.billed ? 'Yes' : 'No'}
+---`;
+    }).join('\n\n');
+
+    const subject = `Rideshare Receipts - ${receiptsToForward.length} receipts`;
+    const mailtoLink = `mailto:${forwardEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+    
+    window.open(mailtoLink);
+    setForwardDialogOpen(false);
+    setForwardEmail("");
+    showSnackbar(`Opening email client to forward ${receiptsToForward.length} receipts...`, "info");
+  };
+
   const exportToCSV = () => {
     const receiptsToExport = selectedReceipts.size > 0
-      ? filteredReceipts.filter(r => selectedReceipts.has(r.id))
+      ? filteredReceipts.filter(r => selectedReceipts.has(r.id || r.messageId))
       : filteredReceipts;
 
     if (receiptsToExport.length === 0) {
-        showSnackbar("No receipts to export.", "warning");
-        return;
+      showSnackbar("No receipts to export.", "warning");
+      return;
     }
 
-    const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Category', 'Billed'];
+    const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Category', 'Billed', 'Parsed By'];
     const rows = receiptsToExport.map(r => [
-        new Date(r.date).toLocaleDateString(),
-        `"${r.vendor}"`,
-        r.total.toFixed(2),
-        r.tip.toFixed(2),
-        `"${r.startLocation?.address || 'N/A'}"`,
-        `"${r.endLocation?.address || 'N/A'}"`,
-        `"${r.category || 'Uncategorized'}"`,
-        r.billed ? 'Yes' : 'No'
+      new Date(r.date).toLocaleDateString(),
+      `"${r.vendor}"`,
+      r.total.toFixed(2),
+      r.tip.toFixed(2),
+      `"${r.startLocation?.address || 'N/A'}"`,
+      `"${r.endLocation?.address || 'N/A'}"`,
+      `"${r.category || 'Uncategorized'}"`,
+      r.billed ? 'Yes' : 'No',
+      `"${r.parsedBy || 'unknown'}"`
     ]);
 
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
@@ -276,6 +351,14 @@ function App() {
     showSnackbar(`${receiptsToExport.length} receipts exported.`, "success");
   };
 
+  const totalAmount = useMemo(() => {
+    return filteredReceipts.reduce((sum, r) => sum + r.total, 0);
+  }, [filteredReceipts]);
+
+  const totalTips = useMemo(() => {
+    return filteredReceipts.reduce((sum, r) => sum + r.tip, 0);
+  }, [filteredReceipts]);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -283,29 +366,130 @@ function App() {
         <CircularProgress color="inherit" />
       </Backdrop>
 
+      {/* Sync Progress Modal */}
       <Modal open={syncing}>
         <Box sx={modalStyle}>
-          <SyncProgressPane logs={syncLogs} />
+          <Box sx={{ p: 3, borderBottom: 1, borderColor: 'divider' }}>
+            <Typography variant="h5" fontWeight="bold">
+              Syncing Receipts
+            </Typography>
+          </Box>
+          <Box sx={{ p: 3, flexGrow: 1, overflow: 'auto' }}>
+            <SyncProgressPane progress={syncProgress} />
+          </Box>
         </Box>
       </Modal>
 
+      {/* Settings Dialog */}
+      <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <SettingsIcon />
+            <Typography variant="h6">Settings</Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={3}>
+            <FormControl fullWidth>
+              <InputLabel>Parser Preference</InputLabel>
+              <Select
+                value={parserPreference}
+                label="Parser Preference"
+                onChange={(e) => setParserPreference(e.target.value)}
+              >
+                <MenuItem value="regex-first">Regex First (Gemini Fallback)</MenuItem>
+                <MenuItem value="regex-only">Regex Only</MenuItem>
+                <MenuItem value="gemini-only">Gemini AI Only</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth
+              label="Gemini API Key"
+              type="password"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              helperText="Get your API key from https://makersuite.google.com/app/apikey"
+            />
+
+            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Parser Modes:</strong>
+                <br />• <strong>Regex First:</strong> Fast pattern matching with AI fallback for complex receipts
+                <br />• <strong>Regex Only:</strong> Traditional pattern matching only (fastest, no API needed)
+                <br />• <strong>Gemini AI Only:</strong> AI-powered parsing (requires API key, slower but more flexible)
+              </Typography>
+            </Paper>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSettingsOpen(false)}>Cancel</Button>
+          <Button onClick={handleSaveSettings} variant="contained">Save Settings</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Forward Email Dialog */}
+      <Dialog open={forwardDialogOpen} onClose={() => setForwardDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Stack direction="row" alignItems="center" spacing={1}>
+            <EmailIcon />
+            <Typography variant="h6">Forward Receipts to Email</Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Email Address"
+            type="email"
+            fullWidth
+            value={forwardEmail}
+            onChange={(e) => setForwardEmail(e.target.value)}
+            helperText={`Forward ${selectedReceipts.size} selected receipts`}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setForwardDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleSendForwardEmail} variant="contained" startIcon={<EmailIcon />}>
+            Forward
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Box sx={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
-        <AppBar position="static" sx={{ flexShrink: 0 }}>
+        {/* App Bar */}
+        <AppBar position="static" elevation={2} sx={{ flexShrink: 0 }}>
           <Toolbar>
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              Rideshare Receipts
+            <Typography variant="h5" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
+              🚗 Rideshare Receipts
             </Typography>
             <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="body2">
-                {user?.email || "Not logged in"}
-              </Typography>
+              <Chip 
+                label={user?.email || "Not logged in"} 
+                variant="outlined" 
+                sx={{ 
+                  color: 'white', 
+                  borderColor: 'rgba(255,255,255,0.5)',
+                  fontWeight: 500 
+                }}
+              />
+              <IconButton onClick={handleOpenSettings} color="inherit" title="Settings">
+                <SettingsIcon />
+              </IconButton>
               <Button color="inherit" startIcon={<VpnKeyIcon />} onClick={handleReauth}>
-                Re-authenticate
+                Re-auth
               </Button>
-              <Button color="inherit" startIcon={<SyncIcon />} onClick={handleSync} disabled={syncing}>
-                {syncing ? "Syncing..." : "Sync Receipts"}
+              <Button 
+                color="inherit" 
+                startIcon={<SyncIcon />} 
+                onClick={handleSync} 
+                disabled={syncing}
+                variant="outlined"
+                sx={{ borderColor: 'rgba(255,255,255,0.5)' }}
+              >
+                {syncing ? "Syncing..." : "Sync"}
               </Button>
-              <IconButton onClick={toggleTheme} color="inherit">
+              <IconButton onClick={toggleTheme} color="inherit" title="Toggle theme">
                 {themeMode === "dark" ? <Brightness7Icon /> : <Brightness4Icon />}
               </IconButton>
             </Stack>
@@ -313,32 +497,68 @@ function App() {
         </AppBar>
         
         <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
-            <Paper elevation={2} sx={{ width: '350px', flexShrink: 0, overflowY: 'auto' }}>
-                <FiltersSidebar
-                    filters={filters}
-                    setFilters={setFilters}
-                    categories={categories}
-                    uniqueLocations={uniqueLocations}
-                    selectedCount={selectedReceipts.size}
-                    onBulkCategory={(cat) => handleBulkUpdate({ category: cat })}
-                    onBulkBilled={(billed) => handleBulkUpdate({ billed })}
-                    onExportCSV={exportToCSV}
-                    newCategory={newCategory}
-                    setNewCategory={setNewCategory}
-                    onAddCategory={handleAddCategory}
-                />
-            </Paper>
+          {/* Filters Sidebar */}
+          <Paper elevation={3} sx={{ width: '350px', flexShrink: 0, overflowY: 'auto', borderRadius: 0 }}>
+            <FiltersSidebar
+              filters={filters}
+              setFilters={setFilters}
+              categories={categories}
+              uniqueLocations={uniqueLocations}
+              selectedCount={selectedReceipts.size}
+              onBulkCategory={(cat) => handleBulkUpdate({ category: cat })}
+              onBulkBilled={(billed) => handleBulkUpdate({ billed })}
+              onForwardToEmail={handleForwardToEmail}
+              onExportCSV={exportToCSV}
+              newCategory={newCategory}
+              setNewCategory={setNewCategory}
+              onAddCategory={handleAddCategory}
+            />
+          </Paper>
 
-            <Box component="main" sx={{ flexGrow: 1, p: 2, overflow: 'auto' }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Showing {filteredReceipts.length} of {receipts.length} receipts.
+          {/* Main Content */}
+          <Box component="main" sx={{ flexGrow: 1, p: 3, overflow: 'auto', bgcolor: 'background.default' }}>
+            {/* Summary Cards */}
+            <Stack direction="row" spacing={2} mb={3}>
+              <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+                <Typography variant="body2" sx={{ opacity: 0.9 }}>Total Receipts</Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {filteredReceipts.length}
                 </Typography>
-                <ReceiptsDataGrid
-                    receipts={filteredReceipts}
-                    selectedReceipts={selectedReceipts}
-                    onSelectionChange={setSelectedReceipts}
-                />
-            </Box>
+                <Typography variant="caption">
+                  of {receipts.length} total
+                </Typography>
+              </Paper>
+              
+              <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'success.main', color: 'success.contrastText' }}>
+                <Typography variant="body2" sx={{ opacity: 0.9 }}>Total Amount</Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  ${totalAmount.toFixed(2)}
+                </Typography>
+                <Typography variant="caption">
+                  Tips: ${totalTips.toFixed(2)}
+                </Typography>
+              </Paper>
+
+              <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'secondary.main', color: 'secondary.contrastText' }}>
+                <Typography variant="body2" sx={{ opacity: 0.9 }}>Selected</Typography>
+                <Typography variant="h4" fontWeight="bold">
+                  {selectedReceipts.size}
+                </Typography>
+                <Typography variant="caption">
+                  {selectedReceipts.size > 0 ? 'receipts selected' : 'no selection'}
+                </Typography>
+              </Paper>
+            </Stack>
+
+            {/* Data Grid */}
+            <Paper elevation={2} sx={{ height: 'calc(100vh - 280px)', p: 2 }}>
+              <ReceiptsDataGrid
+                receipts={filteredReceipts}
+                selectedReceipts={selectedReceipts}
+                onSelectionChange={setSelectedReceipts}
+              />
+            </Paper>
+          </Box>
         </Box>
       </Box>
 
@@ -348,7 +568,7 @@ function App() {
         onClose={handleCloseSnackbar}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }} elevation={6}>
           {snackbar.message}
         </Alert>
       </Snackbar>

@@ -162,11 +162,44 @@ function parseCurbEmail(emailBody) {
   }
 }
 
-// Hybrid parser: Try regex first, fallback to Gemini
-async function parseReceipt(emailBody, vendor, subject) {
-  console.log(`\nParsing ${vendor} receipt: "${subject}"`);
+// Hybrid parser with configurable preference
+async function parseReceipt(
+  emailBody,
+  vendor,
+  subject,
+  parserPreference = "regex-first"
+) {
+  console.log(
+    `\nParsing ${vendor} receipt: "${subject}" (Mode: ${parserPreference})`
+  );
 
-  // Try regex parsing first
+  if (parserPreference === "gemini-only") {
+    // Use only Gemini
+    const parsed = await parseReceiptWithGemini(emailBody, vendor);
+    if (parsed) {
+      console.log(`  ✓ Gemini parsed: $${parsed.total}`);
+      return parsed;
+    }
+    console.log(`  ✗ Gemini parsing failed`);
+    return null;
+  }
+
+  if (parserPreference === "regex-only") {
+    // Use only regex
+    let parsed = null;
+    if (vendor === "Uber") parsed = parseUberEmail(emailBody);
+    else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
+    else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
+
+    if (parsed) {
+      console.log(`  ✓ Regex parsed: $${parsed.total}`);
+      return parsed;
+    }
+    console.log(`  ✗ Regex parsing failed`);
+    return null;
+  }
+
+  // Default: regex-first with Gemini fallback
   let parsed = null;
   if (vendor === "Uber") parsed = parseUberEmail(emailBody);
   else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
@@ -177,7 +210,7 @@ async function parseReceipt(emailBody, vendor, subject) {
     return parsed;
   }
 
-  // Fallback to Gemini if regex failed
+  // Fallback to Gemini
   console.log(`  ⚠ Regex failed, trying Gemini...`);
   parsed = await parseReceiptWithGemini(emailBody, vendor);
 
