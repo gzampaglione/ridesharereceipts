@@ -1,436 +1,359 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// src/App.jsx
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  ThemeProvider,
+  CssBaseline,
+  Box,
+  AppBar,
+  Toolbar,
+  Typography,
+  Button,
+  Container,
+  CircularProgress,
+  Backdrop,
+  Modal,
+  Snackbar,
+  Alert,
+  useMediaQuery,
+  IconButton,
+  Stack,
+  Paper,
+} from "@mui/material";
+import { lightTheme, darkTheme } from "./theme";
+import Brightness4Icon from "@mui/icons-material/Brightness4";
+import Brightness7Icon from "@mui/icons-material/Brightness7";
+import SyncIcon from "@mui/icons-material/Sync";
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+
+import ReceiptsDataGrid from "./components/ReceiptsDataGrid";
+import FiltersSidebar from "./components/FiltersSidebar";
+import SyncProgressPane from "./components/SyncProgressPane";
+
+const modalStyle = {
+  position: 'absolute',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  width: 600,
+  bgcolor: 'background.paper',
+  border: '2px solid #000',
+  boxShadow: 24,
+  p: 4,
+};
+
 
 function App() {
-    const [receipts, setReceipts] = useState([]);
-    const [filteredReceipts, setFilteredReceipts] = useState([]);
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [syncing, setSyncing] = useState(false);
-    const [syncProgress, setSyncProgress] = useState(null);
-    const [selectedReceipts, setSelectedReceipts] = useState(new Set());
-    const [categories, setCategories] = useState([]);
-    const [newCategory, setNewCategory] = useState('');
+  const [receipts, setReceipts] = useState([]);
+  const [filteredReceipts, setFilteredReceipts] = useState([]);
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncLogs, setSyncLogs] = useState([]);
+  const [selectedReceipts, setSelectedReceipts] = useState(new Set());
+  const [categories, setCategories] = useState([]);
+  const [newCategory, setNewCategory] = useState("");
 
-    // Filters
-    const [filters, setFilters] = useState({
-        startDate: '',
-        endDate: '',
-        location: '',
-        vendors: { Uber: true, Lyft: true, Curb: true },
-        category: 'all',
-        billedStatus: 'all'
+  const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "info" });
+
+  // Theme and dark mode setup
+  const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
+  const [themeMode, setThemeMode] = useState("light");
+
+  useEffect(() => {
+    setThemeMode(prefersDarkMode ? "dark" : "light");
+  }, [prefersDarkMode]);
+
+  const theme = useMemo(
+    () => (themeMode === "light" ? lightTheme : darkTheme),
+    [themeMode]
+  );
+  
+  const toggleTheme = () => {
+    setThemeMode((prev) => (prev === "light" ? "dark" : "light"));
+  };
+
+  // Filters state
+  const [filters, setFilters] = useState({
+    startDate: "",
+    endDate: "",
+    location: "",
+    vendors: { Uber: true, Lyft: true, Curb: true },
+    category: "all",
+    billedStatus: "all",
+  });
+
+  const uniqueLocations = useMemo(() => {
+    const locations = new Set();
+    receipts.forEach((r) => {
+      if (r.startLocation?.city)
+        locations.add(`${r.startLocation.city}, ${r.startLocation.state || ""}`);
+      if (r.endLocation?.city)
+        locations.add(`${r.endLocation.city}, ${r.endLocation.state || ""}`);
     });
+    return Array.from(locations).sort();
+  }, [receipts]);
 
-    // Get unique locations from receipts, memoized for performance
-    const uniqueLocations = useMemo(() => {
-        const locations = new Set();
-        receipts.forEach(r => {
-            if (r.startLocation?.city) locations.add(`${r.startLocation.city}, ${r.startLocation.state || ''}`);
-            if (r.endLocation?.city) locations.add(`${r.endLocation.city}, ${r.endLocation.state || ''}`);
-        });
-        return Array.from(locations).sort();
-    }, [receipts]);
+  const showSnackbar = (message, severity = "info") => {
+    setSnackbar({ open: true, message, severity });
+  };
 
-    useEffect(() => {
-        const initialize = async () => {
-            try {
-                console.log("Checking for existing authentication...");
-                const initialUser = await window.electronAPI.getUser();
-                console.log("Initial user check:", initialUser);
+  const handleCloseSnackbar = (event, reason) => {
+    if (reason === 'clickaway') return;
+    setSnackbar({ ...snackbar, open: false });
+  };
 
-                if (!initialUser || !initialUser.email || initialUser.email === "Not Logged In" || initialUser.email === "Error fetching email") {
-                    console.log("No valid authentication found, starting OAuth flow...");
-                    await window.electronAPI.authenticate();
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    const authenticatedUser = await window.electronAPI.getUser();
-                    console.log("User after authentication:", authenticatedUser);
-                    setUser(authenticatedUser);
-                } else {
-                    console.log("Already authenticated:", initialUser.email);
-                    setUser(initialUser);
-                }
+  const loadData = useCallback(async () => {
+    const initialReceipts = await window.electronAPI.getReceipts();
+    const initialCategories = await window.electronAPI.getCategories();
+    setReceipts(initialReceipts);
+    setCategories(initialCategories);
+  }, []);
 
-                const initialReceipts = await window.electronAPI.getReceipts();
-                const initialCategories = await window.electronAPI.getCategories();
-                setReceipts(initialReceipts);
-                setFilteredReceipts(initialReceipts);
-                setCategories(initialCategories);
-            } catch (error) {
-                console.error("Initialization failed:", error);
-                alert("Could not authenticate with Google. Error: " + error.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-        initialize();
-    }, []);
+  useEffect(() => {
+    const initialize = async () => {
+      setLoading(true);
+      try {
+        const initialUser = await window.electronAPI.getUser();
+        if (!initialUser || !initialUser.email || initialUser.email.includes("Not Logged In") || initialUser.email.includes("Error")) {
+          await window.electronAPI.authenticate();
+          const authenticatedUser = await window.electronAPI.getUser();
+          setUser(authenticatedUser);
+        } else {
+          setUser(initialUser);
+        }
+        await loadData();
+      } catch (error) {
+        console.error("Initialization failed:", error);
+        showSnackbar("Could not authenticate with Google: " + error.message, "error");
+      } finally {
+        setLoading(false);
+      }
+    };
+    initialize();
+  }, [loadData]);
 
-    useEffect(() => {
-        const applyFilters = () => {
-            let filtered = [...receipts];
-
-            if (filters.startDate) {
-                filtered = filtered.filter(r => new Date(r.date) >= new Date(filters.startDate));
-            }
-            if (filters.endDate) {
-                filtered = filtered.filter(r => new Date(r.date) <= new Date(filters.endDate));
-            }
-
-            if (filters.location) {
-                const loc = filters.location.toLowerCase();
-                filtered = filtered.filter(r =>
-                    r.startLocation?.city?.toLowerCase().includes(loc) ||
-                    r.endLocation?.city?.toLowerCase().includes(loc) ||
-                    r.startLocation?.state?.toLowerCase().includes(loc) ||
-                    r.endLocation?.state?.toLowerCase().includes(loc)
-                );
-            }
-
-            const activeVendors = Object.keys(filters.vendors).filter(v => filters.vendors[v]);
-            if (activeVendors.length > 0) {
-                filtered = filtered.filter(r => activeVendors.includes(r.vendor));
-            }
-
-            if (filters.category !== 'all') {
-                filtered = filtered.filter(r => r.category === filters.category);
-            }
-
-            if (filters.billedStatus !== 'all') {
-                const isBilled = filters.billedStatus === 'billed';
-                filtered = filtered.filter(r => r.billed === isBilled);
-            }
-
-            setFilteredReceipts(filtered);
-        };
-
-        applyFilters();
-    }, [receipts, filters]);
-
-    const handleReauth = async () => {
-        setLoading(true);
-        try {
-            console.log("Clearing existing auth...");
-            await window.electronAPI.clearAuth();
-            console.log("Starting new authentication...");
-            await window.electronAPI.authenticate();
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            console.log("Fetching user info after auth...");
-            const newUser = await window.electronAPI.getUser();
-            console.log("New user info:", newUser);
-            setUser(newUser);
-            if (newUser && newUser.email && newUser.email !== "Not Logged In") {
-                alert("Re-authentication successful! Logged in as: " + newUser.email);
+  // IPC listeners for sync progress
+  useEffect(() => {
+    const handleProgress = (data) => {
+        setSyncLogs(prevLogs => {
+            const existingLogIndex = prevLogs.findIndex(log => log.id === data.query);
+            if (existingLogIndex !== -1) {
+                const newLogs = [...prevLogs];
+                newLogs[existingLogIndex] = { ...newLogs[existingLogIndex], status: `Processing ${data.current}/${data.total}` };
+                return newLogs;
             } else {
-                alert("Authentication completed but couldn't fetch user info. Please try clicking 'Sync Receipts'.");
+                return [...prevLogs, { id: data.query, subject: `Query: ${data.query}`, status: `Processing ${data.current}/${data.total}` }];
             }
-        } catch (error) {
-            console.error("Re-authentication failed:", error);
-            alert("Re-authentication failed: " + error.message);
-        } finally {
-            setLoading(false);
-        }
+        });
     };
 
-    const handleSync = async () => {
-        setSyncing(true);
-        try {
-            const currentUser = await window.electronAPI.getUser();
-            setUser(currentUser);
-            if (!currentUser || currentUser.email === "Not Logged In") {
-                alert("Please authenticate first by clicking 'Re-authenticate'");
-                return;
-            }
-            console.log("Starting receipt sync...");
-            const result = await window.electronAPI.syncReceipts();
-            alert(`Sync complete! ${result.newReceipts} new receipts found. Total: ${result.totalReceipts}`);
-            const updatedReceipts = await window.electronAPI.getReceipts();
-            setReceipts(updatedReceipts);
-        } catch (error) {
-            console.error("Sync failed:", error);
-            alert("Sync failed: " + error.message + "\n\nPlease check your connection and try re-authenticating.");
-        } finally {
-            setSyncing(false);
-        }
+    const handleComplete = () => {
+        setSyncing(false);
+        setSyncLogs([]);
+        loadData();
+        showSnackbar("Sync complete!", "success");
     };
 
-    const handleSelectReceipt = (messageId) => {
-        const newSelected = new Set(selectedReceipts);
-        if (newSelected.has(messageId)) {
-            newSelected.delete(messageId);
-        } else {
-            newSelected.add(messageId);
-        }
-        setSelectedReceipts(newSelected);
+    window.electronAPI.onSyncProgress(handleProgress);
+    window.electronAPI.onSyncComplete(handleComplete);
+
+    return () => {
+        window.electronAPI.removeSyncListeners();
     };
+  }, [loadData]);
 
-    const handleSelectAll = () => {
-        if (selectedReceipts.size === filteredReceipts.length) {
-            setSelectedReceipts(new Set());
-        } else {
-            setSelectedReceipts(new Set(filteredReceipts.map(r => r.messageId)));
-        }
-    };
 
-    const handleBulkCategory = async (category) => {
-        if (selectedReceipts.size === 0) {
-            alert("Please select receipts first");
-            return;
-        }
-        await window.electronAPI.bulkUpdateReceipts(Array.from(selectedReceipts), { category });
-        const updated = await window.electronAPI.getReceipts();
-        setReceipts(updated);
-        setSelectedReceipts(new Set());
-    };
+  useEffect(() => {
+    let filtered = [...receipts];
+    if (filters.startDate) {
+      filtered = filtered.filter(r => new Date(r.date) >= new Date(filters.startDate));
+    }
+    if (filters.endDate) {
+      const endDate = new Date(filters.endDate);
+      endDate.setHours(23, 59, 59, 999); // Include the entire end day
+      filtered = filtered.filter(r => new Date(r.date) <= endDate);
+    }
+    if (filters.location) {
+      const loc = filters.location.toLowerCase();
+      filtered = filtered.filter(
+        (r) =>
+          `${r.startLocation?.city}, ${r.startLocation?.state || ""}`.toLowerCase() === loc ||
+          `${r.endLocation?.city}, ${r.endLocation?.state || ""}`.toLowerCase() === loc
+      );
+    }
+    const activeVendors = Object.keys(filters.vendors).filter((v) => filters.vendors[v]);
+    if (activeVendors.length < 3) {
+      filtered = filtered.filter((r) => activeVendors.includes(r.vendor));
+    }
+    if (filters.category !== "all") {
+      filtered = filtered.filter((r) => r.category === (filters.category || null));
+    }
+    if (filters.billedStatus !== "all") {
+      filtered = filtered.filter((r) => r.billed === (filters.billedStatus === "billed"));
+    }
+    setFilteredReceipts(filtered.sort((a, b) => new Date(b.date) - new Date(a.date)));
+  }, [receipts, filters]);
 
-    const handleBulkBilled = async (billed) => {
-        if (selectedReceipts.size === 0) {
-            alert("Please select receipts first");
-            return;
-        }
-        await window.electronAPI.bulkUpdateReceipts(Array.from(selectedReceipts), { billed });
-        const updated = await window.electronAPI.getReceipts();
-        setReceipts(updated);
-        setSelectedReceipts(new Set());
-    };
+  const handleReauth = async () => {
+    setLoading(true);
+    try {
+      await window.electronAPI.clearAuth();
+      await window.electronAPI.authenticate();
+      const newUser = await window.electronAPI.getUser();
+      setUser(newUser);
+      showSnackbar("Re-authentication successful! Logged in as: " + newUser.email, "success");
+    } catch (error) {
+      showSnackbar("Re-authentication failed: " + error.message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleAddCategory = async () => {
-        if (!newCategory.trim()) return;
-        const updated = await window.electronAPI.addCategory(newCategory.trim());
-        setCategories(updated);
-        setNewCategory('');
-    };
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncLogs([]);
+    try {
+      const result = await window.electronAPI.syncReceipts();
+      showSnackbar(`${result.newReceipts} new receipts found.`, "success");
+    } catch (error) {
+      console.error("Sync failed:", error);
+      showSnackbar("Sync failed: " + error.message, "error");
+      setSyncing(false);
+    }
+  };
 
-    const exportToCSV = () => {
-        const receiptsToExport = selectedReceipts.size > 0
-            ? filteredReceipts.filter(r => selectedReceipts.has(r.messageId))
-            : filteredReceipts;
+  const handleBulkUpdate = async (update) => {
+    if (selectedReceipts.size === 0) {
+      showSnackbar("Please select one or more receipts first.", "warning");
+      return;
+    }
+    await window.electronAPI.bulkUpdateReceipts(Array.from(selectedReceipts), update);
+    await loadData();
+    setSelectedReceipts(new Set());
+    showSnackbar(`${selectedReceipts.size} receipts updated.`, "success");
+  };
 
-        if (receiptsToExport.length === 0) {
-            alert("No receipts to export");
-            return;
-        }
+  const handleAddCategory = async () => {
+    if (!newCategory.trim()) return;
+    const updated = await window.electronAPI.addCategory(newCategory.trim());
+    setCategories(updated);
+    setNewCategory("");
+    showSnackbar(`Category "${newCategory.trim()}" added.`, "success");
+  };
 
-        const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Category', 'Billed'];
-        const rows = receiptsToExport.map(r => [
-            new Date(r.date).toLocaleDateString(),
-            r.vendor,
-            r.total.toFixed(2),
-            r.tip.toFixed(2),
-            `${r.startLocation?.city || ''} ${r.startLocation?.state || ''}`.trim() || 'N/A',
-            `${r.endLocation?.city || ''} ${r.endLocation?.state || ''}`.trim() || 'N/A',
-            r.category || 'Uncategorized',
-            r.billed ? 'Yes' : 'No'
-        ]);
+  const exportToCSV = () => {
+    const receiptsToExport = selectedReceipts.size > 0
+      ? filteredReceipts.filter(r => selectedReceipts.has(r.id))
+      : filteredReceipts;
 
-        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `receipts_${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
-    if (loading) {
-        return <div className="loading-screen"><h1>Rideshare Receipts</h1><p>Initializing and authenticating...</p></div>;
+    if (receiptsToExport.length === 0) {
+        showSnackbar("No receipts to export.", "warning");
+        return;
     }
 
-    return (
-        <div className="container">
-            <header className="app-header">
-                <h1>Rideshare Receipts</h1>
-                <div className="header-controls">
-                    <span>Logged in as: <strong>{user?.email || 'Not logged in'}</strong></span>
-                    <button onClick={handleReauth}>Re-authenticate</button>
-                    <button onClick={handleSync} disabled={syncing}>
-                        {syncing ? 'Syncing...' : 'Sync Receipts'}
-                    </button>
-                </div>
-            </header>
+    const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Category', 'Billed'];
+    const rows = receiptsToExport.map(r => [
+        new Date(r.date).toLocaleDateString(),
+        `"${r.vendor}"`,
+        r.total.toFixed(2),
+        r.tip.toFixed(2),
+        `"${r.startLocation?.address || 'N/A'}"`,
+        `"${r.endLocation?.address || 'N/A'}"`,
+        `"${r.category || 'Uncategorized'}"`,
+        r.billed ? 'Yes' : 'No'
+    ]);
 
-            {syncProgress && (
-                <div className="sync-progress-bar">
-                    <div className="progress-info">
-                        <span>Syncing {syncProgress.query}: {syncProgress.current} / {syncProgress.total}</span>
-                        <span>{Math.round((syncProgress.current / syncProgress.total) * 100)}%</span>
-                    </div>
-                    <div className="progress-bar-container">
-                        <div
-                            className="progress-bar-fill"
-                            style={{ width: `${(syncProgress.current / syncProgress.total) * 100}%` }}
-                        ></div>
-                    </div>
-                </div>
-            )}
+    const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `receipts_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showSnackbar(`${receiptsToExport.length} receipts exported.`, "success");
+  };
 
-            <main className="main-content">
-                <aside className="sidebar">
-                    <div className="filters-section">
-                        <h3>Filters</h3>
-                        <div className="filters-grid">
-                            <div className="filter-group">
-                                <label>Start Date:</label>
-                                <input
-                                    type="date"
-                                    value={filters.startDate}
-                                    onChange={e => setFilters({ ...filters, startDate: e.target.value })}
-                                />
-                            </div>
-                            <div className="filter-group">
-                                <label>End Date:</label>
-                                <input
-                                    type="date"
-                                    value={filters.endDate}
-                                    onChange={e => setFilters({ ...filters, endDate: e.target.value })}
-                                />
-                            </div>
-                            <div className="filter-group">
-                                <label>Location:</label>
-                                <select
-                                    value={filters.location}
-                                    onChange={e => setFilters({ ...filters, location: e.target.value })}
-                                >
-                                    <option value="">All Locations</option>
-                                    {uniqueLocations.map(loc => (
-                                        <option key={loc} value={loc}>{loc}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="filter-group">
-                                <label>Vendors:</label>
-                                <div className="checkbox-group">
-                                    <div className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            id="vendor-uber"
-                                            checked={filters.vendors.Uber}
-                                            onChange={e => setFilters({ ...filters, vendors: { ...filters.vendors, Uber: e.target.checked } })}
-                                        />
-                                        <label htmlFor="vendor-uber">Uber</label>
-                                    </div>
-                                    <div className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            id="vendor-lyft"
-                                            checked={filters.vendors.Lyft}
-                                            onChange={e => setFilters({ ...filters, vendors: { ...filters.vendors, Lyft: e.target.checked } })}
-                                        />
-                                        <label htmlFor="vendor-lyft">Lyft</label>
-                                    </div>
-                                    <div className="checkbox-item">
-                                        <input
-                                            type="checkbox"
-                                            id="vendor-curb"
-                                            checked={filters.vendors.Curb}
-                                            onChange={e => setFilters({ ...filters, vendors: { ...filters.vendors, Curb: e.target.checked } })}
-                                        />
-                                        <label htmlFor="vendor-curb">Curb</label>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="filter-group">
-                                <label>Category:</label>
-                                <select value={filters.category} onChange={e => setFilters({ ...filters, category: e.target.value })}>
-                                    <option value="all">All</option>
-                                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                                    <option value="">Uncategorized</option>
-                                </select>
-                            </div>
-                            <div className="filter-group">
-                                <label>Status:</label>
-                                <select value={filters.billedStatus} onChange={e => setFilters({ ...filters, billedStatus: e.target.value })}>
-                                    <option value="all">All</option>
-                                    <option value="billed">Billed</option>
-                                    <option value="unbilled">Not Billed</option>
-                                </select>
-                            </div>
-                        </div>
-                        <button onClick={() => setFilters({ startDate: '', endDate: '', location: '', vendors: { Uber: true, Lyft: true, Curb: true }, category: 'all', billedStatus: 'all' })}>
-                            Clear Filters
-                        </button>
-                    </div>
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <Backdrop sx={{ color: "#fff", zIndex: (theme) => theme.zIndex.drawer + 1 }} open={loading}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
 
-                    <div className="actions-section">
-                        <h3>Bulk Actions ({selectedReceipts.size} selected)</h3>
-                        <div className="actions-grid">
-                            <select onChange={e => handleBulkCategory(e.target.value)} value="">
-                                <option value="">Assign Category...</option>
-                                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                            </select>
-                            <button onClick={() => handleBulkBilled(true)}>Mark as Billed</button>
-                            <button onClick={() => handleBulkBilled(false)}>Mark as Not Billed</button>
-                            <button onClick={exportToCSV}>Export to CSV</button>
-                        </div>
-                        <div className="category-manager">
-                            <input
-                                type="text"
-                                placeholder="New category name"
-                                value={newCategory}
-                                onChange={e => setNewCategory(e.target.value)}
-                                onKeyPress={e => e.key === 'Enter' && handleAddCategory()}
-                            />
-                            <button onClick={handleAddCategory}>Add Category</button>
-                        </div>
-                    </div>
-                </aside>
+      <Modal open={syncing}>
+        <Box sx={modalStyle}>
+          <SyncProgressPane logs={syncLogs} />
+        </Box>
+      </Modal>
 
-                <div className="content-area">
-                    <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedReceipts.size === filteredReceipts.length && filteredReceipts.length > 0}
-                                        onChange={handleSelectAll}
-                                    />
-                                </th>
-                                <th>Date</th>
-                                <th>Vendor</th>
-                                <th>Total</th>
-                                <th>Tip</th>
-                                <th>Start Location</th>
-                                <th>End Location</th>
-                                <th>Category</th>
-                                <th>Billed</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filteredReceipts.length > 0 ? (
-                                filteredReceipts
-                                    .sort((a, b) => new Date(b.date) - new Date(a.date))
-                                    .map((receipt) => (
-                                        <tr key={receipt.messageId} className={selectedReceipts.has(receipt.messageId) ? 'selected' : ''}>
-                                            <td>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedReceipts.has(receipt.messageId)}
-                                                    onChange={() => handleSelectReceipt(receipt.messageId)}
-                                                />
-                                            </td>
-                                            <td>{new Date(receipt.date).toLocaleDateString()}</td>
-                                            <td>{receipt.vendor}</td>
-                                            <td>${receipt.total.toFixed(2)}</td>
-                                            <td>${receipt.tip.toFixed(2)}</td>
-                                            <td>{receipt.startLocation?.city || 'N/A'}, {receipt.startLocation?.state || ''}</td>
-                                            <td>{receipt.endLocation?.city || 'N/A'}, {receipt.endLocation?.state || ''}</td>
-                                            <td>{receipt.category || '-'}</td>
-                                            <td>{receipt.billed ? '✓' : '-'}</td>
-                                        </tr>
-                                    ))
-                            ) : (
-                                <tr>
-                                    <td colSpan="9">No receipts found. Click "Sync Receipts" to get started.</td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </main>
-        </div>
-    );
+      <Box sx={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
+        <AppBar position="static" sx={{ flexShrink: 0 }}>
+          <Toolbar>
+            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+              Rideshare Receipts
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="body2">
+                {user?.email || "Not logged in"}
+              </Typography>
+              <Button color="inherit" startIcon={<VpnKeyIcon />} onClick={handleReauth}>
+                Re-authenticate
+              </Button>
+              <Button color="inherit" startIcon={<SyncIcon />} onClick={handleSync} disabled={syncing}>
+                {syncing ? "Syncing..." : "Sync Receipts"}
+              </Button>
+              <IconButton onClick={toggleTheme} color="inherit">
+                {themeMode === "dark" ? <Brightness7Icon /> : <Brightness4Icon />}
+              </IconButton>
+            </Stack>
+          </Toolbar>
+        </AppBar>
+        
+        <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+            <Paper elevation={2} sx={{ width: '350px', flexShrink: 0, overflowY: 'auto' }}>
+                <FiltersSidebar
+                    filters={filters}
+                    setFilters={setFilters}
+                    categories={categories}
+                    uniqueLocations={uniqueLocations}
+                    selectedCount={selectedReceipts.size}
+                    onBulkCategory={(cat) => handleBulkUpdate({ category: cat })}
+                    onBulkBilled={(billed) => handleBulkUpdate({ billed })}
+                    onExportCSV={exportToCSV}
+                    newCategory={newCategory}
+                    setNewCategory={setNewCategory}
+                    onAddCategory={handleAddCategory}
+                />
+            </Paper>
+
+            <Box component="main" sx={{ flexGrow: 1, p: 2, overflow: 'auto' }}>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Showing {filteredReceipts.length} of {receipts.length} receipts.
+                </Typography>
+                <ReceiptsDataGrid
+                    receipts={filteredReceipts}
+                    selectedReceipts={selectedReceipts}
+                    onSelectionChange={setSelectedReceipts}
+                />
+            </Box>
+        </Box>
+      </Box>
+
+      <Snackbar 
+        open={snackbar.open} 
+        autoHideDuration={6000} 
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </ThemeProvider>
+  );
 }
 
 export default App;

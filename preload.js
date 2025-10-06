@@ -1,3 +1,4 @@
+// preload.js
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
@@ -13,9 +14,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getCategories: () => ipcRenderer.invoke("categories:get"),
   addCategory: (category) => ipcRenderer.invoke("categories:add", category),
 
-  // ADD THESE LISTENERS FOR THE SYNC LOG
-  onSyncLogStart: (callback) =>
-    ipcRenderer.on("sync-log-start", () => callback()),
-  onSyncLogUpdate: (callback) =>
-    ipcRenderer.on("sync-log-update", (event, data) => callback(data)),
+  // Listeners for sync progress
+  onSyncProgress: (callback) =>
+    ipcRenderer.on("sync-progress", (event, data) => callback(data)),
+  onSyncComplete: (callback) =>
+    ipcRenderer.on("sync-complete", () => callback()),
+
+  // Function to clean up listeners
+  removeSyncListeners: () => {
+    ipcRenderer.removeAllListeners("sync-progress");
+    ipcRenderer.removeAllListeners("sync-complete");
+  },
 });
