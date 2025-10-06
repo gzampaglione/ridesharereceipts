@@ -13,17 +13,14 @@ let win;
 
 async function createWindow() {
   win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 800,
-    minHeight: 600,
+    width: 1600,
+    height: 1000,
+    minWidth: 1200,
+    minHeight: 700,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
   });
-
-  // Enable auto-resizing to fit content
-  win.setContentSize(1400, 900);
 
   const devServerUrl = "http://localhost:5173";
   const isDev =
@@ -114,40 +111,70 @@ function parseUberEmail(emailBody) {
 
 function parseLyftEmail(emailBody) {
   try {
-    // Lyft receipt parsing - adjust regex based on actual email format
-    const totalMatch = emailBody.match(/Total(?:\s+charge)?[:\s]+\$([\d.]+)/i);
-    const total = totalMatch ? parseFloat(totalMatch[1]) : null;
-    if (total === null) return null;
+    console.log("Parsing Lyft email...");
 
-    const tipMatch = emailBody.match(/Tip[:\s]+\$([\d.]+)/i);
+    // Extract total - Lyft format: "Visa *1336$34.00"
+    const totalMatch =
+      emailBody.match(/\$(\d+\.\d{2})/) ||
+      emailBody.match(/Total.*?\$(\d+\.\d{2})/);
+    const total = totalMatch ? parseFloat(totalMatch[1]) : null;
+    if (total === null) {
+      console.log("Could not find total in Lyft email");
+      return null;
+    }
+
+    // Extract tip - Lyft shows it inline sometimes
+    const tipMatch = emailBody.match(/Tip.*?\$(\d+\.\d{2})/i);
     const tip = tipMatch ? parseFloat(tipMatch[1]) : 0.0;
 
-    const dateMatch = emailBody.match(
-      /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/
-    );
-    const date = dateMatch ? new Date(dateMatch[0]) : null;
-    if (!date) return null;
+    // Extract date - multiple formats
+    const dateMatch =
+      emailBody.match(
+        /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}/
+      ) ||
+      emailBody.match(
+        /on\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}/
+      );
+    const date = dateMatch ? new Date(dateMatch[0].replace("on ", "")) : null;
+    if (!date) {
+      console.log("Could not find date in Lyft email");
+      return null;
+    }
 
-    // Lyft location parsing (adjust based on actual format)
+    // Extract locations - Lyft format: "Pickup   9:22 AM1519 Cambridge St, Philadelphia, PA"
     let startLocation = null,
-      endLocation = null;
-    const pickupMatch = emailBody.match(/Picked up[:\s]+(.*?)(?:\n|Dropped)/i);
-    const dropoffMatch = emailBody.match(/Dropped off[:\s]+(.*?)(?:\n|$)/i);
+      endLocation = null,
+      startTime = null,
+      endTime = null;
+
+    const pickupMatch = emailBody.match(
+      /Pickup\s+(\d{1,2}:\d{2}\s*(?:AM|PM))([^\n]+?)(?=Drop-off|$)/s
+    );
+    const dropoffMatch = emailBody.match(
+      /Drop-off\s+(\d{1,2}:\d{2}\s*(?:AM|PM))([^\n]+?)(?=Committed|$)/s
+    );
 
     if (pickupMatch) {
-      startLocation = parseAddressString(pickupMatch[1].trim());
+      startTime = pickupMatch[1].trim();
+      startLocation = parseAddressString(pickupMatch[2].trim());
     }
+
     if (dropoffMatch) {
-      endLocation = parseAddressString(dropoffMatch[1].trim());
+      endTime = dropoffMatch[1].trim();
+      endLocation = parseAddressString(dropoffMatch[2].trim());
     }
+
+    console.log(`Parsed Lyft: ${total} on ${date.toLocaleDateString()}`);
+    console.log(`  Start: ${startTime} - ${startLocation?.city || "N/A"}`);
+    console.log(`  End: ${endTime} - ${endLocation?.city || "N/A"}`);
 
     return {
       vendor: "Lyft",
       total,
       tip,
       date: date.toISOString(),
-      startTime: null,
-      endTime: null,
+      startTime,
+      endTime,
       startLocation,
       endLocation,
       category: null,
@@ -328,37 +355,73 @@ async function syncReceipts() {
   const gmail = google.gmail({ version: "v1", auth });
 
   // Search for receipts using nested labels
-  // Gmail nested labels use format: "parent/child"
   const queries = [
     "label:Rideshare/Uber",
     "label:Rideshare/Lyft",
     "label:Rideshare/Curb",
-    // Also search the parent label to catch any that aren't nested
     "label:Rideshare",
-    // Fallback to subject-based search if labels don't exist
-    'from:uber.com subject:"Your trip receipt"',
-    'from:lyft.com subject:"ride receipt"',
   ];
 
   const existingReceipts = store.get("receipts", []);
   const existingMessageIds = new Set(existingReceipts.map((r) => r.messageId));
   let newReceiptsCount = 0;
+  let totalProcessed = 0;
 
   for (const query of queries) {
     console.log(`Searching with query: ${query}`);
 
     try {
-      const res = await gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: 500,
-      });
+      // Get all message IDs (pagination to get more than 500)
+      let allMessages = [];
+      let pageToken = null;
 
-      const messages = res.data.messages || [];
-      console.log(`Found ${messages.length} messages for query: ${query}`);
+      do {
+        const res = await gmail.users.messages.list({
+          userId: "me",
+          q: query,
+          maxResults: 500,
+          pageToken: pageToken,
+        });
 
-      for (const message of messages) {
-        if (existingMessageIds.has(message.id)) continue;
+        const messages = res.data.messages || [];
+        allMessages = allMessages.concat(messages);
+        pageToken = res.data.nextPageToken;
+
+        console.log(
+          `Fetched ${messages.length} messages (total so far: ${allMessages.length})`
+        );
+      } while (pageToken);
+
+      console.log(
+        `Found ${allMessages.length} total messages for query: ${query}`
+      );
+
+      // Send progress update to renderer
+      if (win) {
+        win.webContents.send("sync-progress", {
+          total: allMessages.length,
+          current: 0,
+          query: query,
+        });
+      }
+
+      for (let i = 0; i < allMessages.length; i++) {
+        const message = allMessages[i];
+
+        // Skip if already processed
+        if (existingMessageIds.has(message.id)) {
+          totalProcessed++;
+          continue;
+        }
+
+        // Send progress update every 10 messages
+        if (i % 10 === 0 && win) {
+          win.webContents.send("sync-progress", {
+            total: allMessages.length,
+            current: i,
+            query: query,
+          });
+        }
 
         const msgRes = await gmail.users.messages.get({
           userId: "me",
@@ -393,8 +456,7 @@ async function syncReceipts() {
             query.includes("Curb") ||
             subject.toLowerCase().includes("curb")
           ) {
-            // Add Curb parsing if needed
-            parsedData = parseUberEmail(bodyData); // Try Uber parser as fallback
+            parsedData = parseCurbEmail(bodyData);
           }
 
           if (parsedData) {
@@ -402,15 +464,17 @@ async function syncReceipts() {
               `Successfully parsed ${parsedData.vendor} receipt from ${parsedData.date}`
             );
             existingReceipts.push({ ...parsedData, messageId: message.id });
+            existingMessageIds.add(message.id); // Add to set to prevent duplicates
             newReceiptsCount++;
           } else {
             console.log(`Failed to parse email with subject: ${subject}`);
           }
         }
+
+        totalProcessed++;
       }
     } catch (queryError) {
       console.error(`Error with query "${query}":`, queryError.message);
-      // Continue with next query even if this one fails
     }
   }
 
@@ -418,6 +482,12 @@ async function syncReceipts() {
   console.log(
     `Sync complete: ${newReceiptsCount} new receipts, ${existingReceipts.length} total`
   );
+
+  // Send completion signal
+  if (win) {
+    win.webContents.send("sync-complete");
+  }
+
   return {
     newReceipts: newReceiptsCount,
     totalReceipts: existingReceipts.length,

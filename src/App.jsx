@@ -1,4 +1,24 @@
-import React, { useState, useEffect } from 'react';
+<div className="content-area">
+                    <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>
+                                    <input 
+                                        type="checkbox" 
+                                        checked={selectedReceipts.size === filteredReceipts.length && filteredReceipts.length > 0}
+                                        onChange={handleSelectAll}
+                                    />
+                                </th>
+                                <th>Date</th>
+                                <th>Vendor</th>
+                                <th>Total</th>
+                                <th>Tip</th>
+                                <th>Start Location</th>
+                                <th>End Location</th>
+                                <th>Category</th>
+                                <th>Billed</th>
+                            </tr>import React, { useState, useEffect } from 'react';
 import './App.css';
 
 function App() {
@@ -7,6 +27,7 @@ function App() {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
+    const [syncProgress, setSyncProgress] = useState(null);
     const [selectedReceipts, setSelectedReceipts] = useState(new Set());
     const [categories, setCategories] = useState([]);
     const [newCategory, setNewCategory] = useState('');
@@ -16,10 +37,20 @@ function App() {
         startDate: '',
         endDate: '',
         location: '',
-        vendor: 'all',
+        vendors: { Uber: true, Lyft: true, Curb: true },
         category: 'all',
         billedStatus: 'all'
     });
+
+    // Get unique locations from receipts
+    const getUniqueLocations = () => {
+        const locations = new Set();
+        receipts.forEach(r => {
+            if (r.startLocation?.city) locations.add(`${r.startLocation.city}, ${r.startLocation.state || ''}`);
+            if (r.endLocation?.city) locations.add(`${r.endLocation.city}, ${r.endLocation.state || ''}`);
+        });
+        return Array.from(locations).sort();
+    };
 
     useEffect(() => {
         const initialize = async () => {
@@ -86,9 +117,10 @@ function App() {
             );
         }
 
-        // Vendor filter
-        if (filters.vendor !== 'all') {
-            filtered = filtered.filter(r => r.vendor === filters.vendor);
+        // Vendor filter (checkboxes)
+        const activeVendors = Object.keys(filters.vendors).filter(v => filters.vendors[v]);
+        if (activeVendors.length > 0) {
+            filtered = filtered.filter(r => activeVendors.includes(r.vendor));
         }
 
         // Category filter
@@ -257,88 +289,133 @@ function App() {
                 </div>
             </header>
 
-            <div className="filters-section">
-                <h3>Filters</h3>
-                <div className="filters-grid">
-                    <div className="filter-group">
-                        <label>Start Date:</label>
-                        <input 
-                            type="date" 
-                            value={filters.startDate}
-                            onChange={e => setFilters({...filters, startDate: e.target.value})}
-                        />
+            {syncProgress && (
+                <div className="sync-progress-bar">
+                    <div className="progress-info">
+                        <span>Syncing {syncProgress.query}: {syncProgress.current} / {syncProgress.total}</span>
+                        <span>{Math.round((syncProgress.current / syncProgress.total) * 100)}%</span>
                     </div>
-                    <div className="filter-group">
-                        <label>End Date:</label>
-                        <input 
-                            type="date" 
-                            value={filters.endDate}
-                            onChange={e => setFilters({...filters, endDate: e.target.value})}
-                        />
-                    </div>
-                    <div className="filter-group">
-                        <label>Location:</label>
-                        <input 
-                            type="text" 
-                            placeholder="City or State"
-                            value={filters.location}
-                            onChange={e => setFilters({...filters, location: e.target.value})}
-                        />
-                    </div>
-                    <div className="filter-group">
-                        <label>Vendor:</label>
-                        <select value={filters.vendor} onChange={e => setFilters({...filters, vendor: e.target.value})}>
-                            <option value="all">All</option>
-                            <option value="Uber">Uber</option>
-                            <option value="Lyft">Lyft</option>
-                        </select>
-                    </div>
-                    <div className="filter-group">
-                        <label>Category:</label>
-                        <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
-                            <option value="all">All</option>
-                            {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                            <option value="">Uncategorized</option>
-                        </select>
-                    </div>
-                    <div className="filter-group">
-                        <label>Status:</label>
-                        <select value={filters.billedStatus} onChange={e => setFilters({...filters, billedStatus: e.target.value})}>
-                            <option value="all">All</option>
-                            <option value="billed">Billed</option>
-                            <option value="unbilled">Not Billed</option>
-                        </select>
+                    <div className="progress-bar-container">
+                        <div 
+                            className="progress-bar-fill" 
+                            style={{width: `${(syncProgress.current / syncProgress.total) * 100}%`}}
+                        ></div>
                     </div>
                 </div>
-                <button onClick={() => setFilters({startDate: '', endDate: '', location: '', vendor: 'all', category: 'all', billedStatus: 'all'})}>
-                    Clear Filters
-                </button>
-            </div>
+            )}
 
-            <div className="actions-section">
-                <h3>Bulk Actions ({selectedReceipts.size} selected)</h3>
-                <div className="actions-grid">
-                    <select onChange={e => handleBulkCategory(e.target.value)} value="">
-                        <option value="">Assign Category...</option>
-                        {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                    <button onClick={() => handleBulkBilled(true)}>Mark as Billed</button>
-                    <button onClick={() => handleBulkBilled(false)}>Mark as Not Billed</button>
-                    <button onClick={exportToCSV}>Export to CSV</button>
-                </div>
-                <div className="category-manager">
-                    <input 
-                        type="text" 
-                        placeholder="New category name"
-                        value={newCategory}
-                        onChange={e => setNewCategory(e.target.value)}
-                        onKeyPress={e => e.key === 'Enter' && handleAddCategory()}
-                    />
-                    <button onClick={handleAddCategory}>Add Category</button>
-                </div>
-            </div>
+            <div className="main-content">
+                <aside className="sidebar">
+                    <div className="filters-section">
+                        <h3>Filters</h3>
+                        <div className="filters-grid">
+                            <div className="filter-group">
+                                <label>Start Date:</label>
+                                <input 
+                                    type="date" 
+                                    value={filters.startDate}
+                                    onChange={e => setFilters({...filters, startDate: e.target.value})}
+                                />
+                            </div>
+                            <div className="filter-group">
+                                <label>End Date:</label>
+                                <input 
+                                    type="date" 
+                                    value={filters.endDate}
+                                    onChange={e => setFilters({...filters, endDate: e.target.value})}
+                                />
+                            </div>
+                            <div className="filter-group">
+                                <label>Location:</label>
+                                <select 
+                                    value={filters.location}
+                                    onChange={e => setFilters({...filters, location: e.target.value})}
+                                >
+                                    <option value="">All Locations</option>
+                                    {getUniqueLocations().map(loc => (
+                                        <option key={loc} value={loc}>{loc}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="filter-group">
+                                <label>Vendors:</label>
+                                <div className="checkbox-group">
+                                    <div className="checkbox-item">
+                                        <input 
+                                            type="checkbox" 
+                                            id="vendor-uber"
+                                            checked={filters.vendors.Uber}
+                                            onChange={e => setFilters({...filters, vendors: {...filters.vendors, Uber: e.target.checked}})}
+                                        />
+                                        <label htmlFor="vendor-uber">Uber</label>
+                                    </div>
+                                    <div className="checkbox-item">
+                                        <input 
+                                            type="checkbox" 
+                                            id="vendor-lyft"
+                                            checked={filters.vendors.Lyft}
+                                            onChange={e => setFilters({...filters, vendors: {...filters.vendors, Lyft: e.target.checked}})}
+                                        />
+                                        <label htmlFor="vendor-lyft">Lyft</label>
+                                    </div>
+                                    <div className="checkbox-item">
+                                        <input 
+                                            type="checkbox" 
+                                            id="vendor-curb"
+                                            checked={filters.vendors.Curb}
+                                            onChange={e => setFilters({...filters, vendors: {...filters.vendors, Curb: e.target.checked}})}
+                                        />
+                                        <label htmlFor="vendor-curb">Curb</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="filter-group">
+                                <label>Category:</label>
+                                <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
+                                    <option value="all">All</option>
+                                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                    <option value="">Uncategorized</option>
+                                </select>
+                            </div>
+                            <div className="filter-group">
+                                <label>Status:</label>
+                                <select value={filters.billedStatus} onChange={e => setFilters({...filters, billedStatus: e.target.value})}>
+                                    <option value="all">All</option>
+                                    <option value="billed">Billed</option>
+                                    <option value="unbilled">Not Billed</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button onClick={() => setFilters({startDate: '', endDate: '', location: '', vendors: { Uber: true, Lyft: true, Curb: true }, category: 'all', billedStatus: 'all'})}>
+                            Clear Filters
+                        </button>
+                    </div>
 
-            <main>
+                    <div className="actions-section">
+                        <h3>Bulk Actions ({selectedReceipts.size} selected)</h3>
+                        <div className="actions-grid">
+                            <select onChange={e => handleBulkCategory(e.target.value)} value="">
+                                <option value="">Assign Category...</option>
+                                {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                            </select>
+                            <button onClick={() => handleBulkBilled(true)}>Mark as Billed</button>
+                            <button onClick={() => handleBulkBilled(false)}>Mark as Not Billed</button>
+                            <button onClick={exportToCSV}>Export to CSV</button>
+                        </div>
+                        <div className="category-manager">
+                            <input 
+                                type="text" 
+                                placeholder="New category name"
+                                value={newCategory}
+                                onChange={e => setNewCategory(e.target.value)}
+                                onKeyPress={e => e.key === 'Enter' && handleAddCategory()}
+                            />
+                            <button onClick={handleAddCategory}>Add Category</button>
+                        </div>
+                    </div>
+                </aside>
+
+                <div className="content-area">
                 <p>Showing {filteredReceipts.length} of {receipts.length} receipts</p>
                 <table>
                     <thead>
