@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import './App.css';
 
 function App() {
     const [receipts, setReceipts] = useState([]);
