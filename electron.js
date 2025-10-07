@@ -182,6 +182,8 @@ async function authorize() {
   return authorizationPromise;
 }
 
+// Replace the syncReceipts function in electron.js with this updated version
+
 async function syncReceipts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: "v1", auth });
@@ -190,7 +192,6 @@ async function syncReceipts() {
   const parserPreference = store.get("parserPreference", "regex-first");
 
   // TEST MODE: Limit emails for faster testing
-  // Check settings first, then environment variable
   let testModeLimit = store.get("testModeLimit", 0);
   if (!testModeLimit && process.env.TEST_MODE_LIMIT) {
     testModeLimit = parseInt(process.env.TEST_MODE_LIMIT);
@@ -210,6 +211,7 @@ async function syncReceipts() {
   const existingReceipts = store.get("receipts", []);
   const existingMessageIds = new Set(existingReceipts.map((r) => r.messageId));
   let newReceiptsCount = 0;
+  let duplicatesSkipped = 0;
   let processedCount = 0;
   let skippedCount = 0;
 
@@ -333,11 +335,13 @@ async function syncReceipts() {
           }
 
           if (vendor && isReceipt) {
+            // Pass existing receipts for deduplication
             const parsedData = await parseReceipt(
               bodyData,
               vendor,
               subject,
-              parserPreference
+              parserPreference,
+              existingReceipts
             );
 
             if (parsedData) {
@@ -356,6 +360,10 @@ async function syncReceipts() {
                   )} (${i + 1}/${allMessages.length})`,
                 });
               }
+            } else {
+              // Check if it was skipped due to duplicate
+              // (parsedData will be null if duplicate or parsing failed)
+              duplicatesSkipped++;
             }
           } else {
             // Log skipped non-receipt emails
@@ -372,7 +380,13 @@ async function syncReceipts() {
       console.log(
         `  ✓ Query complete: ${allMessages.length} emails checked, ${skippedCount} non-receipts skipped`
       );
+      if (duplicatesSkipped > 0) {
+        console.log(
+          `  🔄 ${duplicatesSkipped} duplicates skipped (content-based detection)`
+        );
+      }
       skippedCount = 0; // Reset for next query
+      duplicatesSkipped = 0;
     } catch (queryError) {
       console.error(`Error with "${query}":`, queryError.message);
       if (win) {
