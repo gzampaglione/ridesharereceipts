@@ -497,6 +497,15 @@ app.whenReady().then(() => {
     return key;
   });
 
+  ipcMain.handle("settings:getGeminiModel", () => {
+    return store.get("geminiModel", "gemini-2.5-flash");
+  });
+
+  ipcMain.handle("settings:setGeminiModel", (event, model) => {
+    store.set("geminiModel", model);
+    return model;
+  });
+
   ipcMain.handle("settings:getTestModeLimit", () => {
     return store.get("testModeLimit", 0);
   });

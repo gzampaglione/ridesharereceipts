@@ -77,6 +77,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [parserPreference, setParserPreference] = useState("regex-first");
   const [geminiKey, setGeminiKey] = useState("");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [testModeLimit, setTestModeLimit] = useState(0);
 
@@ -143,9 +144,11 @@ function App() {
   const loadSettings = useCallback(async () => {
     const preference = await window.electronAPI.getParserPreference();
     const key = await window.electronAPI.getGeminiKey();
+    const model = await window.electronAPI.getGeminiModel();
     const limit = await window.electronAPI.getTestModeLimit();
     setParserPreference(preference);
     setGeminiKey(key);
+    setGeminiModel(model || "gemini-2.5-flash");
     setTestModeLimit(limit);
   }, []);
 
@@ -280,6 +283,7 @@ function App() {
   const handleSaveSettings = async () => {
     await window.electronAPI.setParserPreference(parserPreference);
     await window.electronAPI.setGeminiKey(geminiKey);
+    await window.electronAPI.setGeminiModel(geminiModel);
     await window.electronAPI.setTestModeLimit(testModeLimit);
     setSettingsOpen(false);
     showSnackbar("Settings saved successfully!", "success");
@@ -310,7 +314,6 @@ function App() {
 
     const receiptsToForward = filteredReceipts.filter(r => selectedReceipts.has(r.id || r.messageId));
     
-    // Create email body
     const emailBody = receiptsToForward.map(r => {
       return `Date: ${new Date(r.date).toLocaleDateString()}
 Vendor: ${r.vendor}
@@ -420,13 +423,19 @@ Billed: ${r.billed ? 'Yes' : 'No'}
               </Select>
             </FormControl>
 
+            <Divider />
+
+            <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+              Gemini AI Configuration
+            </Typography>
+
             <TextField
               fullWidth
               label="Gemini API Key"
               type={showGeminiKey ? "text" : "password"}
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
-              helperText="Get your API key from https://makersuite.google.com/app/apikey"
+              helperText="Get your API key from https://aistudio.google.com/app/apikey"
               InputProps={{
                 endAdornment: (
                   <IconButton
@@ -438,6 +447,29 @@ Billed: ${r.billed ? 'Yes' : 'No'}
                 )
               }}
             />
+
+            <FormControl fullWidth>
+              <InputLabel>Gemini Model</InputLabel>
+              <Select
+                value={geminiModel}
+                label="Gemini Model"
+                onChange={(e) => setGeminiModel(e.target.value)}
+              >
+                <MenuItem value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest, Recommended)</MenuItem>
+                <MenuItem value="gemini-2.5-pro">Gemini 2.5 Pro (Most Capable)</MenuItem>
+                <MenuItem value="gemini-2.0-flash">Gemini 2.0 Flash</MenuItem>
+                <MenuItem value="gemini-2.0-flash-001">Gemini 2.0 Flash 001</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Model Comparison:</strong>
+                <br />• <strong>Gemini 2.5 Flash:</strong> Fastest processing, best for high-volume syncing
+                <br />• <strong>Gemini 2.5 Pro:</strong> Most accurate parsing, slower but more reliable
+                <br />• <strong>Gemini 2.0 Flash:</strong> Previous generation, still fast and reliable
+              </Typography>
+            </Paper>
 
             <Divider />
 

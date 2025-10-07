@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("settings:setParserPreference", preference),
   getGeminiKey: () => ipcRenderer.invoke("settings:getGeminiKey"),
   setGeminiKey: (key) => ipcRenderer.invoke("settings:setGeminiKey", key),
+
+  getGeminiModel: () => ipcRenderer.invoke("settings:getGeminiModel"),
+  setGeminiModel: (model) =>
+    ipcRenderer.invoke("settings:setGeminiModel", model),
+
   getTestModeLimit: () => ipcRenderer.invoke("settings:getTestModeLimit"),
   setTestModeLimit: (limit) =>
     ipcRenderer.invoke("settings:setTestModeLimit", limit),
