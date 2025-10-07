@@ -1,13 +1,8 @@
-// src/App.jsx - Complete with SettingsDialog component
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   ThemeProvider,
   CssBaseline,
   Box,
-  AppBar,
-  Toolbar,
-  Typography,
-  Button,
   CircularProgress,
   Backdrop,
   Modal,
@@ -15,30 +10,27 @@ import {
   Alert,
   useMediaQuery,
   IconButton,
-  Stack,
   Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Chip,
   Drawer,
+  Typography,
 } from "@mui/material";
-import { lightTheme, darkTheme } from "./theme";
-import Brightness4Icon from "@mui/icons-material/Brightness4";
-import Brightness7Icon from "@mui/icons-material/Brightness7";
-import SyncIcon from "@mui/icons-material/Sync";
-import VpnKeyIcon from '@mui/icons-material/VpnKey';
-import SettingsIcon from '@mui/icons-material/Settings';
-import EmailIcon from '@mui/icons-material/Email';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import MenuIcon from '@mui/icons-material/Menu';
 
+import { lightTheme, darkTheme } from "./theme";
+import { useReceipts } from "./hooks/useReceipts";
+import { useSettings } from "./hooks/useSettings";
+import { useFilters } from "./hooks/useFilters";
+import { useCategories } from "./hooks/useCategories";
+import { forwardReceipts, exportReceiptsToCSV } from "./utils/emailHelpers";
+import { calculateTotals } from "./utils/receiptCalculations";
+
+import AppHeader from "./components/AppHeader";
+import SummaryCards from "./components/SummaryCards";
 import ReceiptsDataGrid from "./components/ReceiptsDataGrid";
 import FiltersSidebar from "./components/FiltersSidebar";
 import SyncProgressPane from "./components/SyncProgressPane";
 import SettingsDialog from "./components/SettingsDialog";
+import ForwardEmailDialog from "./components/ForwardEmailDialog";
 
 const DRAWER_WIDTH = 350;
 
@@ -60,44 +52,29 @@ const modalStyle = {
 };
 
 function App() {
-  const [receipts, setReceipts] = useState([]);
-  const [filteredReceipts, setFilteredReceipts] = useState([]);
+  // State management hooks
+  const receiptsState = useReceipts();
+  const settingsState = useSettings();
+  const categoriesState = useCategories();
+  const filtersState = useFilters(receiptsState.receipts);
+
+  // UI state
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState({ phase: 'idle', message: '' });
-  const [selectedReceipts, setSelectedReceipts] = useState(new Set());
-  const [categories, setCategories] = useState([]);
-  const [newCategory, setNewCategory] = useState("");
-  
-  // Sidebar drawer state
   const [drawerOpen, setDrawerOpen] = useState(true);
-
-  // Settings dialog
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState(0);
-  const [parserPreference, setParserPreference] = useState("regex-first");
-  const [geminiKey, setGeminiKey] = useState("");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [testModeLimit, setTestModeLimit] = useState(0);
-  const [syncOnStartup, setSyncOnStartup] = useState(false);
-  
-  // Subject line regex patterns
-  const [uberSubjectRegex, setUberSubjectRegex] = useState("");
-  const [lyftSubjectRegex, setLyftSubjectRegex] = useState("");
-  const [curbSubjectRegex, setCurbSubjectRegex] = useState("");
-
-  // Forward email dialog
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
   const [forwardEmail, setForwardEmail] = useState("");
-
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "info" });
 
-  // Theme and dark mode setup
+  // Theme
   const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
   const [themeMode, setThemeMode] = useState("light");
-
+  
   useEffect(() => {
     setThemeMode(prefersDarkMode ? "dark" : "light");
   }, [prefersDarkMode]);
@@ -106,72 +83,19 @@ function App() {
     () => (themeMode === "light" ? lightTheme : darkTheme),
     [themeMode]
   );
-  
-  const toggleTheme = () => {
-    setThemeMode((prev) => (prev === "light" ? "dark" : "light"));
-  };
 
-  const toggleDrawer = () => {
-    setDrawerOpen(!drawerOpen);
-  };
+  // Calculations
+  const { totalAmount, totalTips } = useMemo(
+    () => calculateTotals(filtersState.filteredReceipts),
+    [filtersState.filteredReceipts]
+  );
 
-  // Filters state
-  const [filters, setFilters] = useState({
-    startDate: "",
-    endDate: "",
-    location: "",
-    vendors: { Uber: true, Lyft: true, Curb: true },
-    category: "all",
-    billedStatus: "all",
-  });
-
-  const uniqueLocations = useMemo(() => {
-    const locations = new Set();
-    receipts.forEach((r) => {
-      if (r.startLocation?.city)
-        locations.add(`${r.startLocation.city}, ${r.startLocation.state || ""}`);
-      if (r.endLocation?.city)
-        locations.add(`${r.endLocation.city}, ${r.endLocation.state || ""}`);
-    });
-    return Array.from(locations).sort();
-  }, [receipts]);
-
+  // Snackbar helper
   const showSnackbar = (message, severity = "info") => {
     setSnackbar({ open: true, message, severity });
   };
 
-  const handleCloseSnackbar = (event, reason) => {
-    if (reason === 'clickaway') return;
-    setSnackbar({ ...snackbar, open: false });
-  };
-
-  const loadData = useCallback(async () => {
-    const initialReceipts = await window.electronAPI.getReceipts();
-    const initialCategories = await window.electronAPI.getCategories();
-    setReceipts(initialReceipts);
-    setCategories(initialCategories);
-  }, []);
-
-  const loadSettings = useCallback(async () => {
-    const preference = await window.electronAPI.getParserPreference();
-    const key = await window.electronAPI.getGeminiKey();
-    const model = await window.electronAPI.getGeminiModel();
-    const limit = await window.electronAPI.getTestModeLimit();
-    const uberRegex = await window.electronAPI.getUberSubjectRegex();
-    const lyftRegex = await window.electronAPI.getLyftSubjectRegex();
-    const curbRegex = await window.electronAPI.getCurbSubjectRegex();
-    const syncStartup = await window.electronAPI.getSyncOnStartup();
-    
-    setParserPreference(preference);
-    setGeminiKey(key);
-    setGeminiModel(model || "gemini-2.5-flash");
-    setTestModeLimit(limit);
-    setUberSubjectRegex(uberRegex);
-    setLyftSubjectRegex(lyftRegex);
-    setCurbSubjectRegex(curbRegex);
-    setSyncOnStartup(syncStartup);
-  }, []);
-
+  // Initialize app
   useEffect(() => {
     const initialize = async () => {
       setLoading(true);
@@ -184,10 +108,11 @@ function App() {
         } else {
           setUser(initialUser);
         }
-        await loadData();
-        await loadSettings();
         
-        // Check if sync on startup is enabled
+        await receiptsState.loadReceipts();
+        await categoriesState.loadCategories();
+        await settingsState.loadSettings();
+        
         const syncStartup = await window.electronAPI.getSyncOnStartup();
         if (syncStartup) {
           console.log("🔄 Sync on startup enabled - starting sync...");
@@ -201,60 +126,25 @@ function App() {
       }
     };
     initialize();
-  }, [loadData, loadSettings]);
+  }, []);
 
-  // IPC listeners for sync progress
+  // Sync progress listeners
   useEffect(() => {
-    const handleProgress = (data) => {
-      setSyncProgress(data);
-    };
-
+    const handleProgress = (data) => setSyncProgress(data);
     const handleComplete = (data) => {
       setSyncing(false);
       setSyncProgress({ phase: 'complete', message: 'Sync complete!' });
-      loadData();
+      receiptsState.loadReceipts();
       showSnackbar(`Sync complete! ${data.newReceipts} new receipts added.`, "success");
     };
 
     window.electronAPI.onSyncProgress(handleProgress);
     window.electronAPI.onSyncComplete(handleComplete);
 
-    return () => {
-      window.electronAPI.removeSyncListeners();
-    };
-  }, [loadData]);
+    return () => window.electronAPI.removeSyncListeners();
+  }, [receiptsState.loadReceipts]);
 
-  useEffect(() => {
-    let filtered = [...receipts];
-    if (filters.startDate) {
-      filtered = filtered.filter(r => new Date(r.date) >= new Date(filters.startDate));
-    }
-    if (filters.endDate) {
-      const endDate = new Date(filters.endDate);
-      endDate.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(r => new Date(r.date) <= endDate);
-    }
-    if (filters.location) {
-      const loc = filters.location.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          `${r.startLocation?.city}, ${r.startLocation?.state || ""}`.toLowerCase() === loc ||
-          `${r.endLocation?.city}, ${r.endLocation?.state || ""}`.toLowerCase() === loc
-      );
-    }
-    const activeVendors = Object.keys(filters.vendors).filter((v) => filters.vendors[v]);
-    if (activeVendors.length < 3) {
-      filtered = filtered.filter((r) => activeVendors.includes(r.vendor));
-    }
-    if (filters.category !== "all") {
-      filtered = filtered.filter((r) => r.category === (filters.category || null));
-    }
-    if (filters.billedStatus !== "all") {
-      filtered = filtered.filter((r) => r.billed === (filters.billedStatus === "billed"));
-    }
-    setFilteredReceipts(filtered.sort((a, b) => new Date(b.date) - new Date(a.date)));
-  }, [receipts, filters]);
-
+  // Handlers
   const handleReauth = async () => {
     setLoading(true);
     try {
@@ -272,7 +162,7 @@ function App() {
 
   const handleSync = async () => {
     setSyncing(true);
-    setSyncProgress({ phase: 'starting', message: 'Starting sync...' });
+    setSyncProgress({phase: 'starting', message: 'Starting sync...' });
     try {
       await window.electronAPI.syncReceipts();
     } catch (error) {
@@ -284,38 +174,28 @@ function App() {
   };
 
   const handleBulkUpdate = async (update) => {
-    if (selectedReceipts.size === 0) {
-      showSnackbar("Please select one or more receipts first.", "warning");
-      return;
+    try {
+      await receiptsState.bulkUpdate(update);
+      showSnackbar(`${receiptsState.selectedReceipts.size} receipts updated.`, "success");
+    } catch (error) {
+      showSnackbar(error.message, "warning");
     }
-    await window.electronAPI.bulkUpdateReceipts(Array.from(selectedReceipts), update);
-    await loadData();
-    setSelectedReceipts(new Set());
-    showSnackbar(`${selectedReceipts.size} receipts updated.`, "success");
   };
 
   const handleAddCategory = async () => {
-    if (!newCategory.trim()) return;
-    const updated = await window.electronAPI.addCategory(newCategory.trim());
-    setCategories(updated);
-    setNewCategory("");
-    showSnackbar(`Category "${newCategory.trim()}" added.`, "success");
+    const success = await categoriesState.addCategory();
+    if (success) {
+      showSnackbar(`Category "${categoriesState.newCategory}" added.`, "success");
+    }
   };
 
   const handleOpenSettings = async () => {
-    await loadSettings();
+    await settingsState.loadSettings();
     setSettingsOpen(true);
   };
 
   const handleSaveSettings = async () => {
-    await window.electronAPI.setParserPreference(parserPreference);
-    await window.electronAPI.setGeminiKey(geminiKey);
-    await window.electronAPI.setGeminiModel(geminiModel);
-    await window.electronAPI.setTestModeLimit(testModeLimit);
-    await window.electronAPI.setUberSubjectRegex(uberSubjectRegex);
-    await window.electronAPI.setLyftSubjectRegex(lyftSubjectRegex);
-    await window.electronAPI.setCurbSubjectRegex(curbSubjectRegex);
-    await window.electronAPI.setSyncOnStartup(syncOnStartup);
+    await settingsState.saveSettings();
     setSettingsOpen(false);
     showSnackbar("Settings saved successfully!", "success");
   };
@@ -323,8 +203,8 @@ function App() {
   const handleClearReceipts = async () => {
     if (window.confirm("Are you sure you want to clear all downloaded receipts? This cannot be undone.")) {
       await window.electronAPI.clearReceipts();
-      await loadData();
-      setSelectedReceipts(new Set());
+      await receiptsState.loadReceipts();
+      receiptsState.clearSelection();
       showSnackbar("All receipts cleared!", "success");
     }
   };
@@ -339,90 +219,59 @@ function App() {
   };
 
   const handleForwardToEmail = () => {
-    if (selectedReceipts.size === 0) {
+    if (receiptsState.selectedReceipts.size === 0) {
       showSnackbar("Please select one or more receipts first.", "warning");
       return;
     }
     setForwardDialogOpen(true);
   };
 
-  const handleSendForwardEmail = () => {
+  const handleSendForwardEmail = async () => {
     if (!forwardEmail.trim()) {
       showSnackbar("Please enter an email address.", "warning");
       return;
     }
 
-    const receiptsToForward = filteredReceipts.filter(r => selectedReceipts.has(r.id || r.messageId));
+    setSendingEmail(true);
+    const receiptsToForward = filtersState.filteredReceipts.filter(
+      r => receiptsState.selectedReceipts.has(r.id || r.messageId)
+    );
     
-    const emailBody = receiptsToForward.map(r => {
-      return `Date: ${new Date(r.date).toLocaleDateString()}
-Vendor: ${r.vendor}
-Total: $${r.total.toFixed(2)}
-Tip: $${r.tip.toFixed(2)}
-From: ${r.startLocation?.address || 'N/A'}
-To: ${r.endLocation?.address || 'N/A'}
-Category: ${r.category || 'Uncategorized'}
-Billed: ${r.billed ? 'Yes' : 'No'}
----`;
-    }).join('\n\n');
-
-    const subject = `Rideshare Receipts - ${receiptsToForward.length} receipts`;
-    const mailtoLink = `mailto:${forwardEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
-    
-    window.open(mailtoLink);
-    setForwardDialogOpen(false);
-    setForwardEmail("");
-    showSnackbar(`Opening email client to forward ${receiptsToForward.length} receipts...`, "info");
+    try {
+      const result = await forwardReceipts(receiptsToForward, forwardEmail);
+      
+      if (result.success) {
+        showSnackbar(`Email sent successfully to ${forwardEmail}!`, "success");
+        setForwardDialogOpen(false);
+        setForwardEmail("");
+      } else {
+        showSnackbar(`Failed to send email: ${result.error}`, "error");
+      }
+    } catch (error) {
+      showSnackbar(`Error sending email: ${error.message}`, "error");
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
-  const exportToCSV = () => {
-    const receiptsToExport = selectedReceipts.size > 0
-      ? filteredReceipts.filter(r => selectedReceipts.has(r.id || r.messageId))
-      : filteredReceipts;
+  const handleExportCSV = () => {
+    const receiptsToExport = receiptsState.selectedReceipts.size > 0
+      ? filtersState.filteredReceipts.filter(r => receiptsState.selectedReceipts.has(r.id || r.messageId))
+      : filtersState.filteredReceipts;
 
     if (receiptsToExport.length === 0) {
       showSnackbar("No receipts to export.", "warning");
       return;
     }
 
-    const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Start Time', 'End Time', 'Category', 'Billed'];
-    const rows = receiptsToExport.map(r => [
-      new Date(r.date).toLocaleDateString(),
-      `"${r.vendor}"`,
-      r.total.toFixed(2),
-      r.tip.toFixed(2),
-      `"${r.startLocation?.address || 'N/A'}"`,
-      `"${r.endLocation?.address || 'N/A'}"`,
-      `"${r.startTime || 'N/A'}"`,
-      `"${r.endTime || 'N/A'}"`,
-      `"${r.category || 'Uncategorized'}"`,
-      r.billed ? 'Yes' : 'No',
-    ]);
-
-    const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `receipts_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    exportReceiptsToCSV(receiptsToExport);
     showSnackbar(`${receiptsToExport.length} receipts exported.`, "success");
   };
-
-  const totalAmount = useMemo(() => {
-    return filteredReceipts.reduce((sum, r) => sum + r.total, 0);
-  }, [filteredReceipts]);
-
-  const totalTips = useMemo(() => {
-    return filteredReceipts.reduce((sum, r) => sum + r.tip, 0);
-  }, [filteredReceipts]);
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      
       <Backdrop sx={{ color: "#fff", zIndex: (theme) => theme.zIndex.drawer + 1 }} open={loading}>
         <CircularProgress color="inherit" />
       </Backdrop>
@@ -447,27 +296,27 @@ Billed: ${r.billed ? 'Yes' : 'No'}
         onClose={() => setSettingsOpen(false)}
         settingsTab={settingsTab}
         setSettingsTab={setSettingsTab}
-        parserPreference={parserPreference}
-        setParserPreference={setParserPreference}
-        geminiKey={geminiKey}
-        setGeminiKey={setGeminiKey}
-        geminiModel={geminiModel}
-        setGeminiModel={setGeminiModel}
-        showGeminiKey={showGeminiKey}
-        setShowGeminiKey={setShowGeminiKey}
-        testModeLimit={testModeLimit}
-        setTestModeLimit={setTestModeLimit}
-        uberSubjectRegex={uberSubjectRegex}
-        setUberSubjectRegex={setUberSubjectRegex}
-        lyftSubjectRegex={lyftSubjectRegex}
-        setLyftSubjectRegex={setLyftSubjectRegex}
-        curbSubjectRegex={curbSubjectRegex}
-        setCurbSubjectRegex={setCurbSubjectRegex}
-        syncOnStartup={syncOnStartup}
-        setSyncOnStartup={setSyncOnStartup}
-        categories={categories}
-        newCategory={newCategory}
-        setNewCategory={setNewCategory}
+        parserPreference={settingsState.settings.parserPreference}
+        setParserPreference={settingsState.setters.setParserPreference}
+        geminiKey={settingsState.settings.geminiKey}
+        setGeminiKey={settingsState.setters.setGeminiKey}
+        geminiModel={settingsState.settings.geminiModel}
+        setGeminiModel={settingsState.setters.setGeminiModel}
+        showGeminiKey={settingsState.settings.showGeminiKey}
+        setShowGeminiKey={settingsState.setters.setShowGeminiKey}
+        testModeLimit={settingsState.settings.testModeLimit}
+        setTestModeLimit={settingsState.setters.setTestModeLimit}
+        uberSubjectRegex={settingsState.settings.uberSubjectRegex}
+        setUberSubjectRegex={settingsState.setters.setUberSubjectRegex}
+        lyftSubjectRegex={settingsState.settings.lyftSubjectRegex}
+        setLyftSubjectRegex={settingsState.setters.setLyftSubjectRegex}
+        curbSubjectRegex={settingsState.settings.curbSubjectRegex}
+        setCurbSubjectRegex={settingsState.setters.setCurbSubjectRegex}
+        syncOnStartup={settingsState.settings.syncOnStartup}
+        setSyncOnStartup={settingsState.setters.setSyncOnStartup}
+        categories={categoriesState.categories}
+        newCategory={categoriesState.newCategory}
+        setNewCategory={categoriesState.setNewCategory}
         onAddCategory={handleAddCategory}
         onSave={handleSaveSettings}
         onClearReceipts={handleClearReceipts}
@@ -475,84 +324,31 @@ Billed: ${r.billed ? 'Yes' : 'No'}
       />
 
       {/* Forward Email Dialog */}
-      <Dialog open={forwardDialogOpen} onClose={() => setForwardDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <EmailIcon />
-            <Typography variant="h6">Forward Receipts to Email</Typography>
-          </Stack>
-        </DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Email Address"
-            type="email"
-            fullWidth
-            value={forwardEmail}
-            onChange={(e) => setForwardEmail(e.target.value)}
-            helperText={`Forward ${selectedReceipts.size} selected receipts`}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setForwardDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleSendForwardEmail} variant="contained" startIcon={<EmailIcon />}>
-            Forward
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ForwardEmailDialog
+        open={forwardDialogOpen}
+        onClose={() => setForwardDialogOpen(false)}
+        email={forwardEmail}
+        setEmail={setForwardEmail}
+        sending={sendingEmail}
+        selectedCount={receiptsState.selectedReceipts.size}
+        onSend={handleSendForwardEmail}
+      />
 
       <Box sx={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
-        {/* App Bar */}
-        <AppBar position="static" elevation={2} sx={{ flexShrink: 0 }}>
-          <Toolbar>
-            <IconButton
-              color="inherit"
-              aria-label="toggle drawer"
-              onClick={toggleDrawer}
-              edge="start"
-              sx={{ mr: 2 }}
-            >
-              <MenuIcon />
-            </IconButton>
-            <Typography variant="h5" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
-              🚗 Rideshare Receipts
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Chip 
-                label={user?.email || "Not logged in"} 
-                variant="outlined" 
-                sx={{ 
-                  color: 'white', 
-                  borderColor: 'rgba(255,255,255,0.5)',
-                  fontWeight: 500 
-                }}
-              />
-              <IconButton onClick={handleOpenSettings} color="inherit" title="Settings">
-                <SettingsIcon />
-              </IconButton>
-              <Button color="inherit" startIcon={<VpnKeyIcon />} onClick={handleReauth}>
-                Re-auth
-              </Button>
-              <Button 
-                color="inherit" 
-                startIcon={<SyncIcon />} 
-                onClick={handleSync} 
-                disabled={syncing}
-                variant="outlined"
-                sx={{ borderColor: 'rgba(255,255,255,0.5)' }}
-              >
-                {syncing ? "Syncing..." : "Sync"}
-              </Button>
-              <IconButton onClick={toggleTheme} color="inherit" title="Toggle theme">
-                {themeMode === "dark" ? <Brightness7Icon /> : <Brightness4Icon />}
-              </IconButton>
-            </Stack>
-          </Toolbar>
-        </AppBar>
+        {/* App Header */}
+        <AppHeader
+          user={user}
+          themeMode={themeMode}
+          syncing={syncing}
+          onToggleDrawer={() => setDrawerOpen(!drawerOpen)}
+          onToggleTheme={() => setThemeMode(prev => prev === "light" ? "dark" : "light")}
+          onOpenSettings={handleOpenSettings}
+          onReauth={handleReauth}
+          onSync={handleSync}
+        />
         
         <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
-          {/* Collapsible Sidebar Drawer */}
+          {/* Sidebar Drawer */}
           <Drawer
             variant="persistent"
             anchor="left"
@@ -571,15 +367,15 @@ Billed: ${r.billed ? 'Yes' : 'No'}
             }}
           >
             <FiltersSidebar
-              filters={filters}
-              setFilters={setFilters}
-              categories={categories}
-              uniqueLocations={uniqueLocations}
-              selectedCount={selectedReceipts.size}
+              filters={filtersState.filters}
+              setFilters={filtersState.setFilters}
+              categories={categoriesState.categories}
+              uniqueLocations={filtersState.uniqueLocations}
+              selectedCount={receiptsState.selectedReceipts.size}
               onBulkCategory={(cat) => handleBulkUpdate({ category: cat })}
               onBulkBilled={(billed) => handleBulkUpdate({ billed })}
               onForwardToEmail={handleForwardToEmail}
-              onExportCSV={exportToCSV}
+              onExportCSV={handleExportCSV}
             />
           </Drawer>
 
@@ -595,7 +391,7 @@ Billed: ${r.billed ? 'Yes' : 'No'}
               }}
             >
               <IconButton
-                onClick={toggleDrawer}
+                onClick={() => setDrawerOpen(true)}
                 sx={{
                   bgcolor: 'primary.main',
                   color: 'white',
@@ -622,44 +418,20 @@ Billed: ${r.billed ? 'Yes' : 'No'}
             }}
           >
             {/* Summary Cards */}
-            <Stack direction="row" spacing={2} mb={3}>
-              <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Total Receipts</Typography>
-                <Typography variant="h4" fontWeight="bold">
-                  {filteredReceipts.length}
-                </Typography>
-                <Typography variant="caption">
-                  of {receipts.length} total
-                </Typography>
-              </Paper>
-              
-              <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'success.main', color: 'success.contrastText' }}>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Total Amount</Typography>
-                <Typography variant="h4" fontWeight="bold">
-                  ${totalAmount.toFixed(2)}
-                </Typography>
-                <Typography variant="caption">
-                  Tips: ${totalTips.toFixed(2)}
-                </Typography>
-              </Paper>
-
-              <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'secondary.main', color: 'secondary.contrastText' }}>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>Selected</Typography>
-                <Typography variant="h4" fontWeight="bold">
-                  {selectedReceipts.size}
-                </Typography>
-                <Typography variant="caption">
-                  {selectedReceipts.size > 0 ? 'receipts selected' : 'no selection'}
-                </Typography>
-              </Paper>
-            </Stack>
+            <SummaryCards
+              totalReceipts={receiptsState.receipts.length}
+              filteredCount={filtersState.filteredReceipts.length}
+              totalAmount={totalAmount}
+              totalTips={totalTips}
+              selectedCount={receiptsState.selectedReceipts.size}
+            />
 
             {/* Data Grid */}
             <Paper elevation={2} sx={{ height: 'calc(100vh - 280px)', p: 2 }}>
               <ReceiptsDataGrid
-                receipts={filteredReceipts}
-                selectedReceipts={selectedReceipts}
-                onSelectionChange={setSelectedReceipts}
+                receipts={filtersState.filteredReceipts}
+                selectedReceipts={receiptsState.selectedReceipts}
+                onSelectionChange={receiptsState.setSelectedReceipts}
               />
             </Paper>
           </Box>
@@ -669,10 +441,18 @@ Billed: ${r.billed ? 'Yes' : 'No'}
       <Snackbar 
         open={snackbar.open} 
         autoHideDuration={6000} 
-        onClose={handleCloseSnackbar}
+        onClose={(event, reason) => {
+          if (reason === 'clickaway') return;
+          setSnackbar({ ...snackbar, open: false });
+        }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }} elevation={6}>
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity} 
+          sx={{ width: '100%' }} 
+          elevation={6}
+        >
           {snackbar.message}
         </Alert>
       </Snackbar>
