@@ -10,6 +10,7 @@ export function useSettings() {
   const [uberSubjectRegex, setUberSubjectRegex] = useState("");
   const [lyftSubjectRegex, setLyftSubjectRegex] = useState("");
   const [curbSubjectRegex, setCurbSubjectRegex] = useState("");
+  const [addressDisplayMode, setAddressDisplayMode] = useState("city"); // NEW
 
   const loadSettings = useCallback(async () => {
     const preference = await window.electronAPI.getParserPreference();
@@ -20,6 +21,7 @@ export function useSettings() {
     const lyftRegex = await window.electronAPI.getLyftSubjectRegex();
     const curbRegex = await window.electronAPI.getCurbSubjectRegex();
     const syncStartup = await window.electronAPI.getSyncOnStartup();
+    const addressMode = await window.electronAPI.getAddressDisplayMode(); // NEW
 
     setParserPreference(preference);
     setGeminiKey(key);
@@ -29,6 +31,7 @@ export function useSettings() {
     setLyftSubjectRegex(lyftRegex);
     setCurbSubjectRegex(curbRegex);
     setSyncOnStartup(syncStartup);
+    setAddressDisplayMode(addressMode || "city"); // NEW
   }, []);
 
   const saveSettings = useCallback(async () => {
@@ -40,6 +43,7 @@ export function useSettings() {
     await window.electronAPI.setLyftSubjectRegex(lyftSubjectRegex);
     await window.electronAPI.setCurbSubjectRegex(curbSubjectRegex);
     await window.electronAPI.setSyncOnStartup(syncOnStartup);
+    await window.electronAPI.setAddressDisplayMode(addressDisplayMode); // NEW
   }, [
     parserPreference,
     geminiKey,
@@ -49,6 +53,7 @@ export function useSettings() {
     lyftSubjectRegex,
     curbSubjectRegex,
     syncOnStartup,
+    addressDisplayMode, // NEW
   ]);
 
   return {
@@ -62,6 +67,7 @@ export function useSettings() {
       uberSubjectRegex,
       lyftSubjectRegex,
       curbSubjectRegex,
+      addressDisplayMode, // NEW
     },
     setters: {
       setParserPreference,
@@ -73,6 +79,7 @@ export function useSettings() {
       setUberSubjectRegex,
       setLyftSubjectRegex,
       setCurbSubjectRegex,
+      setAddressDisplayMode, // NEW
     },
     loadSettings,
     saveSettings,

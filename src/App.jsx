@@ -314,6 +314,8 @@ function App() {
         setCurbSubjectRegex={settingsState.setters.setCurbSubjectRegex}
         syncOnStartup={settingsState.settings.syncOnStartup}
         setSyncOnStartup={settingsState.setters.setSyncOnStartup}
+        addressDisplayMode={settingsState.settings.addressDisplayMode}
+        setAddressDisplayMode={settingsState.setters.setAddressDisplayMode}
         categories={categoriesState.categories}
         newCategory={categoriesState.newCategory}
         setNewCategory={categoriesState.setNewCategory}
@@ -432,6 +434,7 @@ function App() {
                 receipts={filtersState.filteredReceipts}
                 selectedReceipts={receiptsState.selectedReceipts}
                 onSelectionChange={receiptsState.setSelectedReceipts}
+                addressDisplayMode={settingsState.settings.addressDisplayMode}
               />
             </Paper>
           </Box>

@@ -492,6 +492,71 @@ app.whenReady().then(() => {
   ipcMain.handle("receipts:sync", syncReceipts);
   ipcMain.handle("receipts:get", () => store.get("receipts", []));
 
+  // Add this with the other receipt handlers
+  ipcMain.handle("receipts:getEmailHtml", async (event, messageId) => {
+    try {
+      const tokens = store.get("google-tokens");
+      if (!tokens) return { success: false, error: "Not authenticated" };
+
+      const credentials = JSON.parse(await fs.readFile("credentials.json"));
+      const { client_secret, client_id, redirect_uris } = credentials.web;
+      const oAuth2Client = new google.auth.OAuth2(
+        client_id,
+        client_secret,
+        redirect_uris[0]
+      );
+      oAuth2Client.setCredentials(tokens);
+
+      const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+      const msgRes = await gmail.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "full",
+      });
+
+      let htmlBody = null;
+      const parts = msgRes.data.payload.parts || [];
+
+      // Try to find HTML part
+      const htmlPart = parts.find((p) => p.mimeType === "text/html");
+      if (htmlPart?.body?.data) {
+        htmlBody = Buffer.from(htmlPart.body.data, "base64").toString();
+      } else if (msgRes.data.payload.body?.data) {
+        const bodyData = Buffer.from(
+          msgRes.data.payload.body.data,
+          "base64"
+        ).toString();
+
+        // Check if it's HTML
+        if (
+          bodyData.includes("<html") ||
+          bodyData.includes("<body") ||
+          bodyData.includes("<!DOCTYPE")
+        ) {
+          htmlBody = bodyData;
+        }
+      }
+
+      // Fallback to plain text if no HTML found
+      if (!htmlBody) {
+        const textPart = parts.find((p) => p.mimeType === "text/plain");
+        if (textPart?.body?.data) {
+          const textBody = Buffer.from(textPart.body.data, "base64").toString();
+          htmlBody = `<html><body><pre style="font-family: Arial, sans-serif; white-space: pre-wrap; word-wrap: break-word;">${textBody}</pre></body></html>`;
+        }
+      }
+
+      if (htmlBody) {
+        return { success: true, html: htmlBody };
+      }
+
+      return { success: false, error: "No email content found" };
+    } catch (error) {
+      console.error("Error getting email HTML:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle("auth:clear", () => {
     store.delete("google-tokens");
     return { success: true };
@@ -596,6 +661,15 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:setTestModeLimit", (event, limit) => {
     store.set("testModeLimit", limit);
     return limit;
+  });
+
+  ipcMain.handle("settings:getAddressDisplayMode", () => {
+    return store.get("addressDisplayMode", "city");
+  });
+
+  ipcMain.handle("settings:setAddressDisplayMode", (event, mode) => {
+    store.set("addressDisplayMode", mode);
+    return mode;
   });
 
   ipcMain.handle("receipts:clear", () => {
@@ -706,16 +780,19 @@ app.whenReady().then(() => {
   });
 
   // Send email via Gmail API
-  ipcMain.handle("email:send", async (event, to, subject, body) => {
-    try {
-      const auth = await authorize();
-      const result = await sendEmailViaGmail(auth, to, subject, body);
-      return result;
-    } catch (error) {
-      console.error("Send email error:", error);
-      return { success: false, error: error.message };
+  ipcMain.handle(
+    "email:send",
+    async (event, to, subject, body, isHtml = false) => {
+      try {
+        const auth = await authorize();
+        const result = await sendEmailViaGmail(auth, to, subject, body, isHtml);
+        return result;
+      } catch (error) {
+        console.error("Send email error:", error);
+        return { success: false, error: error.message };
+      }
     }
-  });
+  );
 
   // Backup database
   ipcMain.handle("database:backup", async () => {

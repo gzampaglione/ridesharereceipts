@@ -47,6 +47,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setCurbSubjectRegex: (regex) =>
     ipcRenderer.invoke("settings:setCurbSubjectRegex", regex),
 
+  // Address display mode - ADD THESE TWO LINES
+  getAddressDisplayMode: () =>
+    ipcRenderer.invoke("settings:getAddressDisplayMode"),
+  setAddressDisplayMode: (mode) =>
+    ipcRenderer.invoke("settings:setAddressDisplayMode", mode),
+
   // Listeners for sync progress
   onSyncProgress: (callback) =>
     ipcRenderer.on("sync-progress", (event, data) => callback(data)),
@@ -65,8 +71,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("settings:setSyncOnStartup", value),
 
   // Send email via Gmail
-  sendEmail: (to, subject, body) =>
-    ipcRenderer.invoke("email:send", to, subject, body),
+  sendEmail: (to, subject, body, isHtml) =>
+    ipcRenderer.invoke("email:send", to, subject, body, isHtml),
 
   // Database backup/restore
   backupDatabase: () => ipcRenderer.invoke("database:backup"),

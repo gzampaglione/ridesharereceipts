@@ -1,15 +1,19 @@
 // src/services/gmailService.js
 const { google } = require("googleapis");
 
-async function sendEmailViaGmail(auth, to, subject, body) {
+async function sendEmailViaGmail(auth, to, subject, body, isHtml = false) {
   try {
     const gmail = google.gmail({ version: "v1", auth });
 
     // Create email in RFC 2822 format
+    const contentType = isHtml
+      ? "Content-Type: text/html; charset=utf-8"
+      : "Content-Type: text/plain; charset=utf-8";
+
     const email = [
       `To: ${to}`,
       `Subject: ${subject}`,
-      `Content-Type: text/plain; charset=utf-8`,
+      contentType,
       ``,
       body,
     ].join("\n");

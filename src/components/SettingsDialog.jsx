@@ -52,6 +52,8 @@ export default function SettingsDialog({
   setCurbSubjectRegex,
   syncOnStartup,
   setSyncOnStartup,
+  addressDisplayMode,
+  setAddressDisplayMode,
   categories,
   newCategory,
   setNewCategory,
@@ -269,6 +271,34 @@ export default function SettingsDialog({
                 </Typography>
               </Paper>
             )}
+
+            <Divider />
+
+            <Typography variant="subtitle2" fontWeight="bold">
+              Display Preferences
+            </Typography>
+
+            <FormControl fullWidth>
+              <InputLabel>Location Display Format</InputLabel>
+              <Select
+                value={addressDisplayMode}
+                label="Location Display Format"
+                onChange={(e) => setAddressDisplayMode(e.target.value)}
+              >
+                <MenuItem value="city">City, State</MenuItem>
+                <MenuItem value="full">Full Address</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                💡 Location Display:
+              </Typography>
+              <Typography variant="body2">
+                • <strong>City, State:</strong> Shows compact location (e.g., "Philadelphia, PA")
+                <br />• <strong>Full Address:</strong> Shows complete street address
+              </Typography>
+            </Paper>
 
             <Divider />
 

@@ -7,12 +7,23 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 export default function ReceiptsDataGrid({ 
   receipts, 
   selectedReceipts, 
-  onSelectionChange 
+  onSelectionChange,
+  addressDisplayMode = 'city' // NEW PROP
 }) {
   const handleOpenEmail = async (messageId) => {
     const result = await window.electronAPI.openEmail(messageId);
     if (result.error) {
       alert(`Error opening email: ${result.error}`);
+    }
+  };
+
+  const getLocationDisplay = (location, mode) => {
+    if (!location || !location.city) return '—';
+    
+    if (mode === 'city') {
+      return `${location.city}, ${location.state || ''}`.trim().replace(/,\s*$/, '');
+    } else {
+      return location.address || `${location.city}, ${location.state || ''}`.trim().replace(/,\s*$/, '');
     }
   };
 
@@ -86,23 +97,15 @@ export default function ReceiptsDataGrid({
       field: 'fromLocation',
       headerName: 'From',
       flex: 1,
-      minWidth: 150,
-      valueGetter: (params) => {
-        const loc = params.row.startLocation;
-        if (!loc || !loc.city) return '—';
-        return `${loc.city}, ${loc.state || ''}`.trim().replace(/,\s*$/, '');
-      },
+      minWidth: addressDisplayMode === 'city' ? 150 : 250,
+      valueGetter: (params) => getLocationDisplay(params.row.startLocation, addressDisplayMode),
     },
     {
       field: 'toLocation',
       headerName: 'To',
       flex: 1,
-      minWidth: 150,
-      valueGetter: (params) => {
-        const loc = params.row.endLocation;
-        if (!loc || !loc.city) return '—';
-        return `${loc.city}, ${loc.state || ''}`.trim().replace(/,\s*$/, '');
-      },
+      minWidth: addressDisplayMode === 'city' ? 150 : 250,
+      valueGetter: (params) => getLocationDisplay(params.row.endLocation, addressDisplayMode),
     },
     {
       field: 'category',
