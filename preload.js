@@ -6,10 +6,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
   clearAuth: () => ipcRenderer.invoke("auth:clear"),
   syncReceipts: () => ipcRenderer.invoke("receipts:sync"),
   getReceipts: () => ipcRenderer.invoke("receipts:get"),
+  clearReceipts: () => ipcRenderer.invoke("receipts:clear"),
   updateReceipt: (messageId, updates) =>
     ipcRenderer.invoke("receipts:update", messageId, updates),
   bulkUpdateReceipts: (messageIds, updates) =>
     ipcRenderer.invoke("receipts:bulkUpdate", messageIds, updates),
+  openEmail: (messageId) => ipcRenderer.invoke("receipts:openEmail", messageId),
   getUser: () => ipcRenderer.invoke("user:get"),
   getCategories: () => ipcRenderer.invoke("categories:get"),
   addCategory: (category) => ipcRenderer.invoke("categories:add", category),

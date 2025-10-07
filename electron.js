@@ -21,12 +21,15 @@ async function createWindow() {
   win = new BrowserWindow({
     width: 1600,
     height: 1000,
-    minWidth: 1200,
-    minHeight: 700,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
+    show: false, // Don't show until ready
   });
+
+  // Maximize window on load
+  win.maximize();
+  win.show();
 
   const devServerUrl = "http://localhost:5173";
   const isDev =
@@ -36,7 +39,10 @@ async function createWindow() {
   if (isDev) {
     console.log("Loading from Vite dev server:", devServerUrl);
     win.loadURL(devServerUrl);
-    win.webContents.openDevTools();
+    // Only open DevTools if explicitly requested via env variable
+    if (process.env.OPEN_DEVTOOLS === "1") {
+      win.webContents.openDevTools();
+    }
   } else {
     win.loadFile(path.join(__dirname, "dist", "index.html"));
   }
@@ -498,6 +504,75 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:setTestModeLimit", (event, limit) => {
     store.set("testModeLimit", limit);
     return limit;
+  });
+
+  ipcMain.handle("receipts:clear", () => {
+    store.set("receipts", []);
+    return { success: true };
+  });
+
+  ipcMain.handle("receipts:openEmail", async (event, messageId) => {
+    try {
+      const tokens = store.get("google-tokens");
+      if (!tokens) return { error: "Not authenticated" };
+
+      const credentials = JSON.parse(await fs.readFile("credentials.json"));
+      const { client_secret, client_id, redirect_uris } = credentials.web;
+      const oAuth2Client = new google.auth.OAuth2(
+        client_id,
+        client_secret,
+        redirect_uris[0]
+      );
+      oAuth2Client.setCredentials(tokens);
+
+      const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+      const msgRes = await gmail.users.messages.get({
+        userId: "me",
+        id: messageId,
+        format: "full",
+      });
+
+      // Try to get HTML body
+      let htmlBody = null;
+      const parts = msgRes.data.payload.parts || [];
+
+      // First try to find text/html part
+      const htmlPart = parts.find((p) => p.mimeType === "text/html");
+      if (htmlPart?.body?.data) {
+        htmlBody = Buffer.from(htmlPart.body.data, "base64").toString();
+      } else if (msgRes.data.payload.body?.data) {
+        // If no parts, try the main body
+        htmlBody = Buffer.from(
+          msgRes.data.payload.body.data,
+          "base64"
+        ).toString();
+      }
+
+      if (!htmlBody) {
+        // Fallback to plain text
+        const textPart = parts.find((p) => p.mimeType === "text/plain");
+        if (textPart?.body?.data) {
+          const textBody = Buffer.from(textPart.body.data, "base64").toString();
+          htmlBody = `<pre>${textBody}</pre>`;
+        }
+      }
+
+      if (htmlBody) {
+        // Create a temporary HTML file and open it
+        const tempFilePath = path.join(
+          app.getPath("temp"),
+          `email_${messageId}.html`
+        );
+        await fs.writeFile(tempFilePath, htmlBody);
+        shell.openExternal(`file://${tempFilePath}`);
+        return { success: true };
+      }
+
+      return { error: "No email content found" };
+    } catch (error) {
+      console.error("Error opening email:", error);
+      return { error: error.message };
+    }
   });
 
   createWindow();

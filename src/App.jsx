@@ -37,6 +37,9 @@ import SyncIcon from "@mui/icons-material/Sync";
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import SettingsIcon from '@mui/icons-material/Settings';
 import EmailIcon from '@mui/icons-material/Email';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 
 import ReceiptsDataGrid from "./components/ReceiptsDataGrid";
 import FiltersSidebar from "./components/FiltersSidebar";
@@ -74,6 +77,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [parserPreference, setParserPreference] = useState("regex-first");
   const [geminiKey, setGeminiKey] = useState("");
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [testModeLimit, setTestModeLimit] = useState(0);
 
   // Forward email dialog
@@ -281,6 +285,15 @@ function App() {
     showSnackbar("Settings saved successfully!", "success");
   };
 
+  const handleClearReceipts = async () => {
+    if (window.confirm("Are you sure you want to clear all downloaded receipts? This cannot be undone.")) {
+      await window.electronAPI.clearReceipts();
+      await loadData();
+      setSelectedReceipts(new Set());
+      showSnackbar("All receipts cleared!", "success");
+    }
+  };
+
   const handleForwardToEmail = () => {
     if (selectedReceipts.size === 0) {
       showSnackbar("Please select one or more receipts first.", "warning");
@@ -410,10 +423,20 @@ Billed: ${r.billed ? 'Yes' : 'No'}
             <TextField
               fullWidth
               label="Gemini API Key"
-              type="password"
+              type={showGeminiKey ? "text" : "password"}
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
               helperText="Get your API key from https://makersuite.google.com/app/apikey"
+              InputProps={{
+                endAdornment: (
+                  <IconButton
+                    onClick={() => setShowGeminiKey(!showGeminiKey)}
+                    edge="end"
+                  >
+                    {showGeminiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                  </IconButton>
+                )
+              }}
             />
 
             <Divider />
@@ -449,6 +472,26 @@ Billed: ${r.billed ? 'Yes' : 'No'}
                 </Typography>
               </Paper>
             )}
+
+            <Divider />
+
+            <Box>
+              <Typography variant="subtitle2" gutterBottom fontWeight="bold" color="error.main">
+                Danger Zone
+              </Typography>
+              <Button
+                variant="outlined"
+                color="error"
+                fullWidth
+                startIcon={<DeleteForeverIcon />}
+                onClick={handleClearReceipts}
+              >
+                Clear All Downloaded Receipts
+              </Button>
+              <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                This will delete all locally stored receipts. You'll need to re-sync from Gmail.
+              </Typography>
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>

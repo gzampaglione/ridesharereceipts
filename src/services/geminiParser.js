@@ -7,17 +7,18 @@ async function parseReceiptWithGemini(emailBody, vendor) {
   // Try to get API key from store first, then fall back to environment variable
   const apiKey = store.get("geminiApiKey") || process.env.GEMINI_API_KEY;
 
-  if (!apiKey) {
+  if (!apiKey || apiKey.trim() === "") {
+    console.log("⚠️  No Gemini API key configured - skipping AI parsing");
     console.log(
-      "No Gemini API key found in settings or environment, skipping AI parsing"
+      "   Set API key in Settings or add GEMINI_API_KEY to .env file"
     );
     return null;
   }
 
   try {
-    console.log(`Attempting Gemini parsing for ${vendor}...`);
+    console.log(`  Attempting Gemini parsing for ${vendor}...`);
 
-    const genAI = new GoogleGenerativeAI(apiKey);
+    const genAI = new GoogleGenerativeAI(apiKey.trim());
     const model = genAI.getGenerativeModel({
       model: "gemini-1.5-flash-latest",
     });

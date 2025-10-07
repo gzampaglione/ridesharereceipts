@@ -213,7 +213,7 @@ async function parseReceipt(
     // Use only Gemini
     const parsed = await parseReceiptWithGemini(emailBody, vendor);
     if (parsed) {
-      console.log(`  ✓ Gemini parsed: $${parsed.total}`);
+      console.log(`  ✓ Gemini parsed: ${parsed.total}`);
       return parsed;
     }
     console.log(`  ✗ Gemini parsing failed`);
@@ -228,7 +228,7 @@ async function parseReceipt(
     else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
 
     if (parsed) {
-      console.log(`  ✓ Regex parsed: $${parsed.total}`);
+      console.log(`  ✓ Regex parsed: ${parsed.total}`);
       return parsed;
     }
     console.log(`  ✗ Regex parsing failed`);
@@ -242,16 +242,16 @@ async function parseReceipt(
   else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
 
   if (parsed) {
-    console.log(`  ✓ Regex parsed: $${parsed.total}`);
+    console.log(`  ✓ Regex parsed: ${parsed.total}`);
     return parsed;
   }
 
   // Fallback to Gemini
-  console.log(`  ⚠ Regex failed, trying Gemini...`);
+  console.log(`  ⚠ Regex failed, trying Gemini fallback...`);
   parsed = await parseReceiptWithGemini(emailBody, vendor);
 
   if (parsed) {
-    console.log(`  ✓ Gemini parsed: $${parsed.total}`);
+    console.log(`  ✓ Gemini parsed: ${parsed.total}`);
     return parsed;
   }
 

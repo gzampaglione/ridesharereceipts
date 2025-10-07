@@ -1,24 +1,51 @@
 import React from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Chip, Box } from '@mui/material';
+import { Chip, Box, IconButton, Tooltip } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 export default function ReceiptsDataGrid({ 
   receipts, 
   selectedReceipts, 
   onSelectionChange 
 }) {
+  const handleOpenEmail = async (messageId) => {
+    const result = await window.electronAPI.openEmail(messageId);
+    if (result.error) {
+      alert(`Error opening email: ${result.error}`);
+    }
+  };
+
   const columns = [
+    {
+      field: 'actions',
+      headerName: '',
+      width: 60,
+      sortable: false,
+      filterable: false,
+      disableColumnMenu: true,
+      renderCell: (params) => (
+        <Tooltip title="Open email in browser">
+          <IconButton
+            size="small"
+            onClick={() => handleOpenEmail(params.row.messageId)}
+            color="primary"
+          >
+            <OpenInNewIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ),
+    },
     {
       field: 'date',
       headerName: 'Date',
-      width: 130,
+      width: 120,
       valueFormatter: (params) => new Date(params.value).toLocaleDateString(),
     },
     {
       field: 'vendor',
       headerName: 'Vendor',
-      width: 110,
+      width: 100,
       renderCell: (params) => (
         <Chip 
           label={params.value}
@@ -39,21 +66,22 @@ export default function ReceiptsDataGrid({
     {
       field: 'total',
       headerName: 'Total',
-      width: 100,
+      width: 90,
       type: 'number',
       valueFormatter: (params) => `$${params.value.toFixed(2)}`,
     },
     {
       field: 'tip',
       headerName: 'Tip',
-      width: 90,
+      width: 80,
       type: 'number',
       valueFormatter: (params) => `$${params.value.toFixed(2)}`,
     },
     {
       field: 'startLocation',
       headerName: 'From',
-      width: 200,
+      flex: 1,
+      minWidth: 150,
       valueGetter: (params) => {
         const loc = params.row.startLocation;
         return loc?.city ? `${loc.city}, ${loc.state || ''}` : '—';
@@ -62,7 +90,8 @@ export default function ReceiptsDataGrid({
     {
       field: 'endLocation',
       headerName: 'To',
-      width: 200,
+      flex: 1,
+      minWidth: 150,
       valueGetter: (params) => {
         const loc = params.row.endLocation;
         return loc?.city ? `${loc.city}, ${loc.state || ''}` : '—';
@@ -71,7 +100,7 @@ export default function ReceiptsDataGrid({
     {
       field: 'category',
       headerName: 'Category',
-      width: 150,
+      width: 140,
       renderCell: (params) => 
         params.value ? (
           <Chip label={params.value} size="small" variant="outlined" />
@@ -82,7 +111,7 @@ export default function ReceiptsDataGrid({
     {
       field: 'billed',
       headerName: 'Billed',
-      width: 90,
+      width: 80,
       type: 'boolean',
       renderCell: (params) => 
         params.value ? (
@@ -90,6 +119,20 @@ export default function ReceiptsDataGrid({
         ) : (
           <span style={{ color: '#999' }}>—</span>
         ),
+    },
+    {
+      field: 'parsedBy',
+      headerName: 'Parser',
+      width: 90,
+      renderCell: (params) => 
+        params.value ? (
+          <Chip 
+            label={params.value} 
+            size="small" 
+            variant="outlined"
+            color={params.value === 'gemini' ? 'secondary' : 'default'}
+          />
+        ) : null,
     },
   ];
 
@@ -99,7 +142,7 @@ export default function ReceiptsDataGrid({
   }));
 
   return (
-    <Box sx={{ height: 600, width: '100%' }}>
+    <Box sx={{ height: '100%', width: '100%' }}>
       <DataGrid
         rows={rows}
         columns={columns}
@@ -118,9 +161,17 @@ export default function ReceiptsDataGrid({
           },
         }}
         pageSizeOptions={[10, 25, 50, 100]}
+        autoHeight={false}
+        density="comfortable"
         sx={{
           '& .MuiDataGrid-row:hover': {
             backgroundColor: 'action.hover',
+          },
+          '& .MuiDataGrid-cell:focus': {
+            outline: 'none',
+          },
+          '& .MuiDataGrid-cell:focus-within': {
+            outline: 'none',
           },
         }}
       />
