@@ -80,6 +80,11 @@ function App() {
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [testModeLimit, setTestModeLimit] = useState(0);
+  
+  // Subject line regex patterns
+  const [uberSubjectRegex, setUberSubjectRegex] = useState("");
+  const [lyftSubjectRegex, setLyftSubjectRegex] = useState("");
+  const [curbSubjectRegex, setCurbSubjectRegex] = useState("");
 
   // Forward email dialog
   const [forwardDialogOpen, setForwardDialogOpen] = useState(false);
@@ -146,10 +151,17 @@ function App() {
     const key = await window.electronAPI.getGeminiKey();
     const model = await window.electronAPI.getGeminiModel();
     const limit = await window.electronAPI.getTestModeLimit();
+    const uberRegex = await window.electronAPI.getUberSubjectRegex();
+    const lyftRegex = await window.electronAPI.getLyftSubjectRegex();
+    const curbRegex = await window.electronAPI.getCurbSubjectRegex();
+    
     setParserPreference(preference);
     setGeminiKey(key);
     setGeminiModel(model || "gemini-2.5-flash");
     setTestModeLimit(limit);
+    setUberSubjectRegex(uberRegex);
+    setLyftSubjectRegex(lyftRegex);
+    setCurbSubjectRegex(curbRegex);
   }, []);
 
   useEffect(() => {
@@ -285,6 +297,9 @@ function App() {
     await window.electronAPI.setGeminiKey(geminiKey);
     await window.electronAPI.setGeminiModel(geminiModel);
     await window.electronAPI.setTestModeLimit(testModeLimit);
+    await window.electronAPI.setUberSubjectRegex(uberSubjectRegex);
+    await window.electronAPI.setLyftSubjectRegex(lyftSubjectRegex);
+    await window.electronAPI.setCurbSubjectRegex(curbSubjectRegex);
     setSettingsOpen(false);
     showSnackbar("Settings saved successfully!", "success");
   };
@@ -420,8 +435,58 @@ Billed: ${r.billed ? 'Yes' : 'No'}
                 <MenuItem value="regex-first">Regex First (Gemini Fallback)</MenuItem>
                 <MenuItem value="regex-only">Regex Only</MenuItem>
                 <MenuItem value="gemini-only">Gemini AI Only</MenuItem>
+                <MenuItem value="gemini-subject-filter">Gemini AI with Subject Filtering</MenuItem>
               </Select>
             </FormControl>
+
+            <Divider />
+
+            <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
+              Subject Line Filters (for Receipt Detection)
+            </Typography>
+
+            <TextField
+              fullWidth
+              label="Uber Subject Pattern"
+              value={uberSubjectRegex}
+              onChange={(e) => setUberSubjectRegex(e.target.value)}
+              placeholder="Your (Monday|Tuesday|...) (morning|afternoon|...) trip with Uber"
+              helperText="Regex pattern to identify Uber receipt emails"
+              multiline
+              rows={2}
+            />
+
+            <TextField
+              fullWidth
+              label="Lyft Subject Pattern"
+              value={lyftSubjectRegex}
+              onChange={(e) => setLyftSubjectRegex(e.target.value)}
+              placeholder="Your ride with .+ on (January|February|...)"
+              helperText="Regex pattern to identify Lyft receipt emails"
+              multiline
+              rows={2}
+            />
+
+            <TextField
+              fullWidth
+              label="Curb Subject Pattern"
+              value={curbSubjectRegex}
+              onChange={(e) => setCurbSubjectRegex(e.target.value)}
+              placeholder="Your Curb Ride Receipt"
+              helperText="Regex pattern to identify Curb receipt emails"
+              multiline
+              rows={2}
+            />
+
+            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                💡 Subject Filter Tips:
+              </Typography>
+              <Typography variant="body2">
+                These patterns help identify receipt emails. Leave blank to use defaults.
+                Use regex syntax (e.g., .+ for any text, | for OR).
+              </Typography>
+            </Paper>
 
             <Divider />
 
@@ -490,7 +555,8 @@ Billed: ${r.billed ? 'Yes' : 'No'}
                 <strong>Parser Modes:</strong>
                 <br />• <strong>Regex First:</strong> Fast pattern matching with AI fallback for complex receipts
                 <br />• <strong>Regex Only:</strong> Traditional pattern matching only (fastest, no API needed)
-                <br />• <strong>Gemini AI Only:</strong> AI-powered parsing (requires API key, slower but more flexible)
+                <br />• <strong>Gemini AI Only:</strong> AI-powered parsing for all emails (requires API key)
+                <br />• <strong>Gemini AI with Subject Filtering:</strong> Only parses emails matching subject patterns (most efficient)
               </Typography>
             </Paper>
 

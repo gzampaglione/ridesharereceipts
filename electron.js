@@ -584,6 +584,50 @@ app.whenReady().then(() => {
     }
   });
 
+  // Model selection
+  ipcMain.handle("settings:getGeminiModel", () => {
+    return store.get("geminiModel", "gemini-2.5-flash");
+  });
+
+  ipcMain.handle("settings:setGeminiModel", (event, model) => {
+    store.set("geminiModel", model);
+    return model;
+  });
+
+  // Subject regex patterns - with defaults
+  ipcMain.handle("settings:getUberSubjectRegex", () => {
+    return store.get(
+      "uberSubjectRegex",
+      "Your (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) (morning|afternoon|evening|night) trip with Uber"
+    );
+  });
+
+  ipcMain.handle("settings:setUberSubjectRegex", (event, regex) => {
+    store.set("uberSubjectRegex", regex);
+    return regex;
+  });
+
+  ipcMain.handle("settings:getLyftSubjectRegex", () => {
+    return store.get(
+      "lyftSubjectRegex",
+      "Your ride with .+ on (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}"
+    );
+  });
+
+  ipcMain.handle("settings:setLyftSubjectRegex", (event, regex) => {
+    store.set("lyftSubjectRegex", regex);
+    return regex;
+  });
+
+  ipcMain.handle("settings:getCurbSubjectRegex", () => {
+    return store.get("curbSubjectRegex", "Your Curb Ride Receipt");
+  });
+
+  ipcMain.handle("settings:setCurbSubjectRegex", (event, regex) => {
+    store.set("curbSubjectRegex", regex);
+    return regex;
+  });
+
   createWindow();
 });
 

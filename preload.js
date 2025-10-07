@@ -31,6 +31,22 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setTestModeLimit: (limit) =>
     ipcRenderer.invoke("settings:setTestModeLimit", limit),
 
+  // Model selection
+  getGeminiModel: () => ipcRenderer.invoke("settings:getGeminiModel"),
+  setGeminiModel: (model) =>
+    ipcRenderer.invoke("settings:setGeminiModel", model),
+
+  // Subject regex patterns
+  getUberSubjectRegex: () => ipcRenderer.invoke("settings:getUberSubjectRegex"),
+  setUberSubjectRegex: (regex) =>
+    ipcRenderer.invoke("settings:setUberSubjectRegex", regex),
+  getLyftSubjectRegex: () => ipcRenderer.invoke("settings:getLyftSubjectRegex"),
+  setLyftSubjectRegex: (regex) =>
+    ipcRenderer.invoke("settings:setLyftSubjectRegex", regex),
+  getCurbSubjectRegex: () => ipcRenderer.invoke("settings:getCurbSubjectRegex"),
+  setCurbSubjectRegex: (regex) =>
+    ipcRenderer.invoke("settings:setCurbSubjectRegex", regex),
+
   // Listeners for sync progress
   onSyncProgress: (callback) =>
     ipcRenderer.on("sync-progress", (event, data) => callback(data)),

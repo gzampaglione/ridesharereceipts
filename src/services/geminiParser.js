@@ -18,9 +18,19 @@ async function parseReceiptWithGemini(emailBody, vendor) {
     console.log(`  🤖 Attempting Gemini parsing for ${vendor}...`);
     console.log(`  📧 Email body length: ${emailBody.length} characters`);
 
+    // Get user's preferred model from settings, with fallbacks
+    const preferredModel = store.get("geminiModel", "gemini-2.5-flash");
+
     // Use REST API directly to avoid SDK API version issues
-    // Try different model names that work with the v1 API
-    const modelNames = ["gemini-2.5-flash"];
+    // Start with user's preferred model, then try fallbacks
+    const modelNames = [
+      preferredModel, // User's preferred model first
+      "gemini-2.5-flash", // Fast and efficient (recommended)
+      "gemini-2.0-flash", // Also fast
+      "gemini-2.5-pro", // More capable but slower
+    ].filter((v, i, a) => a.indexOf(v) === i); // Remove duplicates
+
+    console.log(`  🎯 Preferred model: ${preferredModel}`);
 
     let successfulParse = null;
     let lastError = null;
