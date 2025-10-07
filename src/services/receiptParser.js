@@ -206,21 +206,26 @@ async function parseReceipt(
   parserPreference = "regex-first"
 ) {
   console.log(
-    `\nParsing ${vendor} receipt: "${subject}" (Mode: ${parserPreference})`
+    `\n📧 Parsing ${vendor} receipt: "${subject.substring(
+      0,
+      60
+    )}..." (Mode: ${parserPreference})`
   );
 
   if (parserPreference === "gemini-only") {
+    console.log(`  🤖 Using Gemini AI Only mode`);
     // Use only Gemini
     const parsed = await parseReceiptWithGemini(emailBody, vendor);
     if (parsed) {
-      console.log(`  ✓ Gemini parsed: ${parsed.total}`);
+      console.log(`  ✅ SUCCESS: Gemini parsed $${parsed.total.toFixed(2)}`);
       return parsed;
     }
-    console.log(`  ✗ Gemini parsing failed`);
+    console.log(`  ❌ FAILED: Gemini parsing returned null`);
     return null;
   }
 
   if (parserPreference === "regex-only") {
+    console.log(`  🔍 Using Regex Only mode`);
     // Use only regex
     let parsed = null;
     if (vendor === "Uber") parsed = parseUberEmail(emailBody);
@@ -228,34 +233,37 @@ async function parseReceipt(
     else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
 
     if (parsed) {
-      console.log(`  ✓ Regex parsed: ${parsed.total}`);
+      console.log(`  ✅ SUCCESS: Regex parsed $${parsed.total.toFixed(2)}`);
       return parsed;
     }
-    console.log(`  ✗ Regex parsing failed`);
+    console.log(`  ❌ FAILED: Regex parsing returned null`);
     return null;
   }
 
   // Default: regex-first with Gemini fallback
+  console.log(`  🔍 Trying Regex first...`);
   let parsed = null;
   if (vendor === "Uber") parsed = parseUberEmail(emailBody);
   else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
   else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
 
   if (parsed) {
-    console.log(`  ✓ Regex parsed: ${parsed.total}`);
+    console.log(`  ✅ SUCCESS: Regex parsed $${parsed.total.toFixed(2)}`);
     return parsed;
   }
 
   // Fallback to Gemini
-  console.log(`  ⚠ Regex failed, trying Gemini fallback...`);
+  console.log(`  ⚠️  Regex failed, trying Gemini fallback...`);
   parsed = await parseReceiptWithGemini(emailBody, vendor);
 
   if (parsed) {
-    console.log(`  ✓ Gemini parsed: ${parsed.total}`);
+    console.log(
+      `  ✅ SUCCESS: Gemini fallback parsed $${parsed.total.toFixed(2)}`
+    );
     return parsed;
   }
 
-  console.log(`  ✗ All parsing methods failed`);
+  console.log(`  ❌ FAILED: All parsing methods failed for this receipt`);
   return null;
 }
 
