@@ -37,10 +37,29 @@ export default function ReceiptsDataGrid({
       ),
     },
     {
+      field: 'total',
+      headerName: 'Total',
+      width: 90,
+      type: 'number',
+      valueFormatter: (params) => `$${params.value.toFixed(2)}`,
+    },
+    {
       field: 'date',
       headerName: 'Date',
       width: 110,
       valueFormatter: (params) => new Date(params.value).toLocaleDateString(),
+    },
+    {
+      field: 'startTime',
+      headerName: 'Pickup',
+      width: 90,
+      valueGetter: (params) => params.row.startTime || '—',
+    },
+    {
+      field: 'endTime',
+      headerName: 'Dropoff',
+      width: 90,
+      valueGetter: (params) => params.row.endTime || '—',
     },
     {
       field: 'vendor',
@@ -64,51 +83,25 @@ export default function ReceiptsDataGrid({
       ),
     },
     {
-      field: 'total',
-      headerName: 'Total',
-      width: 80,
-      type: 'number',
-      valueFormatter: (params) => `$${params.value.toFixed(2)}`,
-    },
-    {
-      field: 'tip',
-      headerName: 'Tip',
-      width: 70,
-      type: 'number',
-      valueFormatter: (params) => `$${params.value.toFixed(2)}`,
-    },
-    {
-      field: 'startTime',
-      headerName: 'Pickup',
-      width: 90,
-      valueGetter: (params) => params.row.startTime || '—',
-    },
-    {
-      field: 'startLocation',
+      field: 'fromLocation',
       headerName: 'From',
       flex: 1,
-      minWidth: 200,
+      minWidth: 150,
       valueGetter: (params) => {
         const loc = params.row.startLocation;
-        if (!loc) return '—';
-        return loc.address || (loc.city ? `${loc.city}, ${loc.state || ''}` : '—');
+        if (!loc || !loc.city) return '—';
+        return `${loc.city}, ${loc.state || ''}`.trim().replace(/,\s*$/, '');
       },
     },
     {
-      field: 'endTime',
-      headerName: 'Dropoff',
-      width: 90,
-      valueGetter: (params) => params.row.endTime || '—',
-    },
-    {
-      field: 'endLocation',
+      field: 'toLocation',
       headerName: 'To',
       flex: 1,
-      minWidth: 200,
+      minWidth: 150,
       valueGetter: (params) => {
         const loc = params.row.endLocation;
-        if (!loc) return '—';
-        return loc.address || (loc.city ? `${loc.city}, ${loc.state || ''}` : '—');
+        if (!loc || !loc.city) return '—';
+        return `${loc.city}, ${loc.state || ''}`.trim().replace(/,\s*$/, '');
       },
     },
     {
