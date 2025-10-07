@@ -1,4 +1,4 @@
-// src/App.jsx
+// src/App.jsx - Complete with collapsible sidebar
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ThemeProvider,
@@ -8,7 +8,6 @@ import {
   Toolbar,
   Typography,
   Button,
-  Container,
   CircularProgress,
   Backdrop,
   Modal,
@@ -29,6 +28,9 @@ import {
   MenuItem,
   Chip,
   Divider,
+  Tabs,
+  Tab,
+  Drawer,
 } from "@mui/material";
 import { lightTheme, darkTheme } from "./theme";
 import Brightness4Icon from "@mui/icons-material/Brightness4";
@@ -40,10 +42,15 @@ import EmailIcon from '@mui/icons-material/Email';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import MenuIcon from '@mui/icons-material/Menu';
 
 import ReceiptsDataGrid from "./components/ReceiptsDataGrid";
 import FiltersSidebar from "./components/FiltersSidebar";
 import SyncProgressPane from "./components/SyncProgressPane";
+
+const DRAWER_WIDTH = 350;
 
 const modalStyle = {
   position: 'absolute',
@@ -72,9 +79,13 @@ function App() {
   const [selectedReceipts, setSelectedReceipts] = useState(new Set());
   const [categories, setCategories] = useState([]);
   const [newCategory, setNewCategory] = useState("");
+  
+  // Sidebar drawer state
+  const [drawerOpen, setDrawerOpen] = useState(true);
 
   // Settings dialog
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(0);
   const [parserPreference, setParserPreference] = useState("regex-first");
   const [geminiKey, setGeminiKey] = useState("");
   const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
@@ -107,6 +118,10 @@ function App() {
   
   const toggleTheme = () => {
     setThemeMode((prev) => (prev === "light" ? "dark" : "light"));
+  };
+
+  const toggleDrawer = () => {
+    setDrawerOpen(!drawerOpen);
   };
 
   // Filters state
@@ -360,7 +375,7 @@ Billed: ${r.billed ? 'Yes' : 'No'}
       return;
     }
 
-    const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Category', 'Billed', 'Parsed By'];
+    const headers = ['Date', 'Vendor', 'Total', 'Tip', 'Start Location', 'End Location', 'Start Time', 'End Time', 'Category', 'Billed'];
     const rows = receiptsToExport.map(r => [
       new Date(r.date).toLocaleDateString(),
       `"${r.vendor}"`,
@@ -368,9 +383,10 @@ Billed: ${r.billed ? 'Yes' : 'No'}
       r.tip.toFixed(2),
       `"${r.startLocation?.address || 'N/A'}"`,
       `"${r.endLocation?.address || 'N/A'}"`,
+      `"${r.startTime || 'N/A'}"`,
+      `"${r.endTime || 'N/A'}"`,
       `"${r.category || 'Uncategorized'}"`,
       r.billed ? 'Yes' : 'No',
-      `"${r.parsedBy || 'unknown'}"`
     ]);
 
     const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
@@ -415,186 +431,302 @@ Billed: ${r.billed ? 'Yes' : 'No'}
         </Box>
       </Modal>
 
-      {/* Settings Dialog */}
-      <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} maxWidth="sm" fullWidth>
+      {/* Settings Dialog with Tabs */}
+      <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>
           <Stack direction="row" alignItems="center" spacing={1}>
             <SettingsIcon />
             <Typography variant="h6">Settings</Typography>
           </Stack>
         </DialogTitle>
+        
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={settingsTab} onChange={(e, v) => setSettingsTab(v)} aria-label="settings tabs">
+            <Tab label="Parser" />
+            <Tab label="Categories" />
+            <Tab label="Advanced" />
+            <Tab label="Danger Zone" />
+          </Tabs>
+        </Box>
+
         <DialogContent dividers>
-          <Stack spacing={3}>
-            <FormControl fullWidth>
-              <InputLabel>Parser Preference</InputLabel>
-              <Select
-                value={parserPreference}
-                label="Parser Preference"
-                onChange={(e) => setParserPreference(e.target.value)}
-              >
-                <MenuItem value="regex-first">Regex First (Gemini Fallback)</MenuItem>
-                <MenuItem value="regex-only">Regex Only</MenuItem>
-                <MenuItem value="gemini-only">Gemini AI Only</MenuItem>
-                <MenuItem value="gemini-subject-filter">Gemini AI with Subject Filtering</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Divider />
-
-            <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
-              Subject Line Filters (for Receipt Detection)
-            </Typography>
-
-            <TextField
-              fullWidth
-              label="Uber Subject Pattern"
-              value={uberSubjectRegex}
-              onChange={(e) => setUberSubjectRegex(e.target.value)}
-              placeholder="Your (Monday|Tuesday|...) (morning|afternoon|...) trip with Uber"
-              helperText="Regex pattern to identify Uber receipt emails"
-              multiline
-              rows={2}
-            />
-
-            <TextField
-              fullWidth
-              label="Lyft Subject Pattern"
-              value={lyftSubjectRegex}
-              onChange={(e) => setLyftSubjectRegex(e.target.value)}
-              placeholder="Your ride with .+ on (January|February|...)"
-              helperText="Regex pattern to identify Lyft receipt emails"
-              multiline
-              rows={2}
-            />
-
-            <TextField
-              fullWidth
-              label="Curb Subject Pattern"
-              value={curbSubjectRegex}
-              onChange={(e) => setCurbSubjectRegex(e.target.value)}
-              placeholder="Your Curb Ride Receipt"
-              helperText="Regex pattern to identify Curb receipt emails"
-              multiline
-              rows={2}
-            />
-
-            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
-              <Typography variant="body2" fontWeight="bold" gutterBottom>
-                💡 Subject Filter Tips:
+          {/* Tab 1: Parser Settings */}
+          {settingsTab === 0 && (
+            <Stack spacing={3}>
+              <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                Parser Configuration
               </Typography>
-              <Typography variant="body2">
-                These patterns help identify receipt emails. Leave blank to use defaults.
-                Use regex syntax (e.g., .+ for any text, | for OR).
-              </Typography>
-            </Paper>
 
-            <Divider />
+              <FormControl fullWidth>
+                <InputLabel>Parser Preference</InputLabel>
+                <Select
+                  value={parserPreference}
+                  label="Parser Preference"
+                  onChange={(e) => setParserPreference(e.target.value)}
+                >
+                  <MenuItem value="regex-first">Regex First (Gemini Fallback)</MenuItem>
+                  <MenuItem value="regex-only">Regex Only</MenuItem>
+                  <MenuItem value="gemini-only">Gemini AI Only</MenuItem>
+                  <MenuItem value="gemini-subject-filter">Gemini AI with Subject Filtering</MenuItem>
+                </Select>
+              </FormControl>
 
-            <Typography variant="subtitle2" fontWeight="bold" color="primary.main">
-              Gemini AI Configuration
-            </Typography>
-
-            <TextField
-              fullWidth
-              label="Gemini API Key"
-              type={showGeminiKey ? "text" : "password"}
-              value={geminiKey}
-              onChange={(e) => setGeminiKey(e.target.value)}
-              helperText="Get your API key from https://aistudio.google.com/app/apikey"
-              InputProps={{
-                endAdornment: (
-                  <IconButton
-                    onClick={() => setShowGeminiKey(!showGeminiKey)}
-                    edge="end"
-                  >
-                    {showGeminiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                  </IconButton>
-                )
-              }}
-            />
-
-            <FormControl fullWidth>
-              <InputLabel>Gemini Model</InputLabel>
-              <Select
-                value={geminiModel}
-                label="Gemini Model"
-                onChange={(e) => setGeminiModel(e.target.value)}
-              >
-                <MenuItem value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest, Recommended)</MenuItem>
-                <MenuItem value="gemini-2.5-pro">Gemini 2.5 Pro (Most Capable)</MenuItem>
-                <MenuItem value="gemini-2.0-flash">Gemini 2.0 Flash</MenuItem>
-                <MenuItem value="gemini-2.0-flash-001">Gemini 2.0 Flash 001</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
-              <Typography variant="body2" color="text.secondary">
-                <strong>Model Comparison:</strong>
-                <br />• <strong>Gemini 2.5 Flash:</strong> Fastest processing, best for high-volume syncing
-                <br />• <strong>Gemini 2.5 Pro:</strong> Most accurate parsing, slower but more reliable
-                <br />• <strong>Gemini 2.0 Flash:</strong> Previous generation, still fast and reliable
-              </Typography>
-            </Paper>
-
-            <Divider />
-
-            <TextField
-              fullWidth
-              label="Test Mode Limit (0 = disabled)"
-              type="number"
-              value={testModeLimit}
-              onChange={(e) => setTestModeLimit(parseInt(e.target.value) || 0)}
-              helperText="Limit emails per label for faster testing. Set to 0 to process all emails."
-              InputProps={{
-                inputProps: { min: 0, max: 500 }
-              }}
-            />
-
-            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
-              <Typography variant="body2" color="text.secondary">
-                <strong>Parser Modes:</strong>
-                <br />• <strong>Regex First:</strong> Fast pattern matching with AI fallback for complex receipts
-                <br />• <strong>Regex Only:</strong> Traditional pattern matching only (fastest, no API needed)
-                <br />• <strong>Gemini AI Only:</strong> AI-powered parsing for all emails (requires API key)
-                <br />• <strong>Gemini AI with Subject Filtering:</strong> Only parses emails matching subject patterns (most efficient)
-              </Typography>
-            </Paper>
-
-            {testModeLimit > 0 && (
-              <Paper sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
-                <Typography variant="body2" fontWeight="bold">
-                  ⚠️ Test Mode Active
-                </Typography>
-                <Typography variant="body2">
-                  Only {testModeLimit} emails per label will be processed. Disable for production use!
+              <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Parser Modes:</strong>
+                  <br />• <strong>Regex First:</strong> Fast pattern matching with AI fallback for complex receipts
+                  <br />• <strong>Regex Only:</strong> Traditional pattern matching only (fastest, no API needed)
+                  <br />• <strong>Gemini AI Only:</strong> AI-powered parsing for all emails (requires API key)
+                  <br />• <strong>Gemini AI with Subject Filtering:</strong> Only parses emails matching subject patterns (most efficient)
                 </Typography>
               </Paper>
-            )}
 
-            <Divider />
+              <Divider />
 
-            <Box>
-              <Typography variant="subtitle2" gutterBottom fontWeight="bold" color="error.main">
+              <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                Gemini AI Configuration
+              </Typography>
+
+              <TextField
+                fullWidth
+                label="Gemini API Key"
+                type={showGeminiKey ? "text" : "password"}
+                value={geminiKey}
+                onChange={(e) => setGeminiKey(e.target.value)}
+                helperText="Get your API key from https://aistudio.google.com/app/apikey"
+                InputProps={{
+                  endAdornment: (
+                    <IconButton
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      edge="end"
+                    >
+                      {showGeminiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                    </IconButton>
+                  )
+                }}
+              />
+
+              <FormControl fullWidth>
+                <InputLabel>Gemini Model</InputLabel>
+                <Select
+                  value={geminiModel}
+                  label="Gemini Model"
+                  onChange={(e) => setGeminiModel(e.target.value)}
+                >
+                  <MenuItem value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest, Recommended)</MenuItem>
+                  <MenuItem value="gemini-2.5-pro">Gemini 2.5 Pro (Most Capable, Slower)</MenuItem>
+                  <MenuItem value="gemini-2.0-flash">Gemini 2.0 Flash</MenuItem>
+                  <MenuItem value="gemini-2.0-flash-001">Gemini 2.0 Flash 001</MenuItem>
+                </Select>
+              </FormControl>
+
+              <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+                <Typography variant="body2" fontWeight="bold" gutterBottom>
+                  💡 Model Selection:
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Flash models are recommended for most users.</strong> They're fast and cost-effective. 
+                  Only use Pro if you're experiencing parsing issues with Flash.
+                </Typography>
+              </Paper>
+            </Stack>
+          )}
+
+          {/* Tab 2: Categories */}
+          {settingsTab === 1 && (
+            <Stack spacing={3}>
+              <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                Manage Categories
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary">
+                Create custom categories to organize your rideshare receipts.
+              </Typography>
+
+              <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                  Current Categories
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+                  {categories.map(cat => (
+                    <Chip key={cat} label={cat} color="primary" variant="outlined" />
+                  ))}
+                </Stack>
+              </Paper>
+
+              <Divider />
+
+              <Typography variant="subtitle2" fontWeight="bold">
+                Add New Category
+              </Typography>
+
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  fullWidth
+                  label="Category Name"
+                  placeholder="e.g., Client Meetings, Airport Trips"
+                  value={newCategory}
+                  onChange={e => setNewCategory(e.target.value)}
+                  onKeyPress={e => e.key === 'Enter' && handleAddCategory()}
+                />
+                <Button 
+                  variant="contained" 
+                  onClick={handleAddCategory}
+                  disabled={!newCategory.trim()}
+                  sx={{ minWidth: '100px' }}
+                >
+                  Add
+                </Button>
+              </Stack>
+
+              <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+                <Typography variant="body2" fontWeight="bold" gutterBottom>
+                  💡 Category Tips:
+                </Typography>
+                <Typography variant="body2">
+                  • Use categories to separate work trips, personal trips, and shared expenses
+                  <br />• Categories make it easier to generate reports and track spending by type
+                  <br />• You can bulk-assign categories using the filters sidebar
+                </Typography>
+              </Paper>
+            </Stack>
+          )}
+
+          {/* Tab 3: Advanced */}
+          {settingsTab === 2 && (
+            <Stack spacing={3}>
+              <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                Advanced Settings
+              </Typography>
+
+              <Typography variant="subtitle2" fontWeight="bold">
+                Test Mode
+              </Typography>
+
+              <TextField
+                fullWidth
+                label="Test Mode Limit (0 = disabled)"
+                type="number"
+                value={testModeLimit}
+                onChange={(e) => setTestModeLimit(parseInt(e.target.value) || 0)}
+                helperText="Limit emails per label for faster testing. Set to 0 to process all emails."
+                InputProps={{
+                  inputProps: { min: 0, max: 500 }
+                }}
+              />
+
+              {testModeLimit > 0 && (
+                <Paper sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    ⚠️ Test Mode Active
+                  </Typography>
+                  <Typography variant="body2">
+                    Only {testModeLimit} emails per label will be processed. Disable for production use!
+                  </Typography>
+                </Paper>
+              )}
+
+              <Divider />
+
+              <Typography variant="subtitle2" fontWeight="bold">
+                Subject Line Filters
+              </Typography>
+
+              <Typography variant="body2" color="text.secondary">
+                These regex patterns help identify receipt emails. Leave blank to use defaults.
+              </Typography>
+
+              <TextField
+                fullWidth
+                label="Uber Subject Pattern"
+                value={uberSubjectRegex}
+                onChange={(e) => setUberSubjectRegex(e.target.value)}
+                placeholder="Your (Monday|Tuesday|...) (morning|afternoon|...) trip with Uber"
+                helperText="Regex pattern to identify Uber receipt emails"
+                multiline
+                rows={2}
+              />
+
+              <TextField
+                fullWidth
+                label="Lyft Subject Pattern"
+                value={lyftSubjectRegex}
+                onChange={(e) => setLyftSubjectRegex(e.target.value)}
+                placeholder="Your ride with .+ on (January|February|...)"
+                helperText="Regex pattern to identify Lyft receipt emails"
+                multiline
+                rows={2}
+              />
+
+              <TextField
+                fullWidth
+                label="Curb Subject Pattern"
+                value={curbSubjectRegex}
+                onChange={(e) => setCurbSubjectRegex(e.target.value)}
+                placeholder="Your Curb Ride Receipt"
+                helperText="Regex pattern to identify Curb receipt emails"
+              />
+
+              <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+                <Typography variant="body2" fontWeight="bold" gutterBottom>
+                  💡 Subject Filter Tips:
+                </Typography>
+                <Typography variant="body2">
+                  Use regex syntax (e.g., .+ for any text, | for OR). These patterns ensure only actual 
+                  receipt emails are processed, not promotional emails or other notifications.
+                </Typography>
+              </Paper>
+            </Stack>
+          )}
+
+          {/* Tab 4: Danger Zone */}
+          {settingsTab === 3 && (
+            <Stack spacing={3}>
+              <Typography variant="subtitle1" fontWeight="bold" color="error">
                 Danger Zone
               </Typography>
-              <Button
-                variant="outlined"
-                color="error"
-                fullWidth
-                startIcon={<DeleteForeverIcon />}
-                onClick={handleClearReceipts}
-              >
-                Clear All Downloaded Receipts
-              </Button>
-              <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-                This will delete all locally stored receipts. You'll need to re-sync from Gmail.
-              </Typography>
-            </Box>
-          </Stack>
+
+              <Paper sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText' }}>
+                <Typography variant="body2" fontWeight="bold" gutterBottom>
+                  ⚠️ Warning
+                </Typography>
+                <Typography variant="body2">
+                  Actions in this section are permanent and cannot be undone. 
+                  Please proceed with caution.
+                </Typography>
+              </Paper>
+
+              <Divider />
+
+              <Box>
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                  Clear All Downloaded Receipts
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                  This will delete all locally stored receipts from the database. 
+                  You'll need to re-sync from Gmail to get them back. 
+                  Your Gmail emails will not be affected.
+                </Typography>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  fullWidth
+                  startIcon={<DeleteForeverIcon />}
+                  onClick={handleClearReceipts}
+                  size="large"
+                >
+                  Clear All Receipts
+                </Button>
+              </Box>
+            </Stack>
+          )}
         </DialogContent>
+        
         <DialogActions>
           <Button onClick={() => setSettingsOpen(false)}>Cancel</Button>
-          <Button onClick={handleSaveSettings} variant="contained">Save Settings</Button>
+          <Button onClick={handleSaveSettings} variant="contained" color="primary">
+            Save Settings
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -630,6 +762,15 @@ Billed: ${r.billed ? 'Yes' : 'No'}
         {/* App Bar */}
         <AppBar position="static" elevation={2} sx={{ flexShrink: 0 }}>
           <Toolbar>
+            <IconButton
+              color="inherit"
+              aria-label="toggle drawer"
+              onClick={toggleDrawer}
+              edge="start"
+              sx={{ mr: 2 }}
+            >
+              <MenuIcon />
+            </IconButton>
             <Typography variant="h5" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
               🚗 Rideshare Receipts
             </Typography>
@@ -667,26 +808,82 @@ Billed: ${r.billed ? 'Yes' : 'No'}
         </AppBar>
         
         <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
-          {/* Filters Sidebar */}
-          <Paper elevation={3} sx={{ width: '350px', flexShrink: 0, overflowY: 'auto', borderRadius: 0 }}>
-            <FiltersSidebar
-              filters={filters}
-              setFilters={setFilters}
-              categories={categories}
-              uniqueLocations={uniqueLocations}
-              selectedCount={selectedReceipts.size}
-              onBulkCategory={(cat) => handleBulkUpdate({ category: cat })}
-              onBulkBilled={(billed) => handleBulkUpdate({ billed })}
-              onForwardToEmail={handleForwardToEmail}
-              onExportCSV={exportToCSV}
-              newCategory={newCategory}
-              setNewCategory={setNewCategory}
-              onAddCategory={handleAddCategory}
-            />
-          </Paper>
+          {/* Collapsible Sidebar Drawer */}
+          <Drawer
+            variant="persistent"
+            anchor="left"
+            open={drawerOpen}
+            sx={{
+              width: drawerOpen ? DRAWER_WIDTH : 0,
+              flexShrink: 0,
+              '& .MuiDrawer-paper': {
+                width: DRAWER_WIDTH,
+                boxSizing: 'border-box',
+                position: 'relative',
+                height: '100%',
+                borderRight: 1,
+                borderColor: 'divider',
+              },
+            }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <Box sx={{ p: 1, display: 'flex', justifyContent: 'flex-end', borderBottom: 1, borderColor: 'divider' }}>
+                <IconButton onClick={toggleDrawer}>
+                  <ChevronLeftIcon />
+                </IconButton>
+              </Box>
+              <FiltersSidebar
+                filters={filters}
+                setFilters={setFilters}
+                categories={categories}
+                uniqueLocations={uniqueLocations}
+                selectedCount={selectedReceipts.size}
+                onBulkCategory={(cat) => handleBulkUpdate({ category: cat })}
+                onBulkBilled={(billed) => handleBulkUpdate({ billed })}
+                onForwardToEmail={handleForwardToEmail}
+                onExportCSV={exportToCSV}
+              />
+            </Box>
+          </Drawer>
+
+          {/* Toggle Button when drawer is closed */}
+          {!drawerOpen && (
+            <Box
+              sx={{
+                position: 'absolute',
+                left: 0,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                zIndex: 1200,
+              }}
+            >
+              <IconButton
+                onClick={toggleDrawer}
+                sx={{
+                  bgcolor: 'primary.main',
+                  color: 'white',
+                  borderRadius: '0 8px 8px 0',
+                  '&:hover': {
+                    bgcolor: 'primary.dark',
+                  },
+                }}
+              >
+                <ChevronRightIcon />
+              </IconButton>
+            </Box>
+          )}
 
           {/* Main Content */}
-          <Box component="main" sx={{ flexGrow: 1, p: 3, overflow: 'auto', bgcolor: 'background.default' }}>
+          <Box 
+            component="main" 
+            sx={{ 
+              flexGrow: 1, 
+              p: 3, 
+              overflow: 'auto', 
+              bgcolor: 'background.default',
+              transition: 'margin 225ms cubic-bezier(0, 0, 0.2, 1)',
+            }}
+          >
             {/* Summary Cards */}
             <Stack direction="row" spacing={2} mb={3}>
               <Paper sx={{ p: 2, flexGrow: 1, bgcolor: 'primary.main', color: 'primary.contrastText' }}>

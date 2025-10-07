@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Chip, Box, IconButton, Tooltip } from '@mui/material';
@@ -41,13 +39,13 @@ export default function ReceiptsDataGrid({
     {
       field: 'date',
       headerName: 'Date',
-      width: 120,
+      width: 110,
       valueFormatter: (params) => new Date(params.value).toLocaleDateString(),
     },
     {
       field: 'vendor',
       headerName: 'Vendor',
-      width: 100,
+      width: 90,
       renderCell: (params) => (
         <Chip 
           label={params.value}
@@ -68,41 +66,55 @@ export default function ReceiptsDataGrid({
     {
       field: 'total',
       headerName: 'Total',
-      width: 90,
+      width: 80,
       type: 'number',
       valueFormatter: (params) => `$${params.value.toFixed(2)}`,
     },
     {
       field: 'tip',
       headerName: 'Tip',
-      width: 80,
+      width: 70,
       type: 'number',
       valueFormatter: (params) => `$${params.value.toFixed(2)}`,
+    },
+    {
+      field: 'startTime',
+      headerName: 'Pickup',
+      width: 90,
+      valueGetter: (params) => params.row.startTime || '—',
     },
     {
       field: 'startLocation',
       headerName: 'From',
       flex: 1,
-      minWidth: 150,
+      minWidth: 200,
       valueGetter: (params) => {
         const loc = params.row.startLocation;
-        return loc?.city ? `${loc.city}, ${loc.state || ''}` : '—';
+        if (!loc) return '—';
+        return loc.address || (loc.city ? `${loc.city}, ${loc.state || ''}` : '—');
       },
+    },
+    {
+      field: 'endTime',
+      headerName: 'Dropoff',
+      width: 90,
+      valueGetter: (params) => params.row.endTime || '—',
     },
     {
       field: 'endLocation',
       headerName: 'To',
       flex: 1,
-      minWidth: 150,
+      minWidth: 200,
       valueGetter: (params) => {
         const loc = params.row.endLocation;
-        return loc?.city ? `${loc.city}, ${loc.state || ''}` : '—';
+        if (!loc) return '—';
+        return loc.address || (loc.city ? `${loc.city}, ${loc.state || ''}` : '—');
       },
     },
     {
       field: 'category',
       headerName: 'Category',
-      width: 140,
+      width: 130,
       renderCell: (params) => 
         params.value ? (
           <Chip label={params.value} size="small" variant="outlined" />
@@ -113,7 +125,7 @@ export default function ReceiptsDataGrid({
     {
       field: 'billed',
       headerName: 'Billed',
-      width: 80,
+      width: 70,
       type: 'boolean',
       renderCell: (params) => 
         params.value ? (
@@ -122,7 +134,6 @@ export default function ReceiptsDataGrid({
           <span style={{ color: '#999' }}>—</span>
         ),
     },
-    // REMOVED: parsedBy column
   ];
 
   const rows = receipts.map((receipt, index) => ({
