@@ -182,7 +182,8 @@ async function authorize() {
   return authorizationPromise;
 }
 
-// Replace the syncReceipts function in electron.js with this updated version
+// electron.js - FIXED VERSION
+// Replace your syncReceipts function with this improved version
 
 async function syncReceipts() {
   const auth = await authorize();
@@ -202,10 +203,10 @@ async function syncReceipts() {
   }
 
   const queries = [
-    "label:Rideshare/Uber",
-    "label:Rideshare/Lyft",
-    "label:Rideshare/Curb",
-    "label:Rideshare",
+    "label:rideshare-uber", // Note: lowercase with hyphen
+    "label:rideshare-lyft", // Note: lowercase with hyphen
+    "label:rideshare-curb", // Note: lowercase with hyphen
+    "label:rideshare", // Parent label to catch any others
   ];
 
   const existingReceipts = store.get("receipts", []);
@@ -214,6 +215,7 @@ async function syncReceipts() {
   let duplicatesSkipped = 0;
   let processedCount = 0;
   let skippedCount = 0;
+  let parseFailures = 0;
 
   for (const query of queries) {
     console.log(`\n🔍 ${query}`);
@@ -241,7 +243,6 @@ async function syncReceipts() {
         const messages = res.data.messages || [];
         allMessages = allMessages.concat(messages);
 
-        // If test mode is enabled, stop after reaching the limit
         if (
           testModeLimit &&
           testModeLimit > 0 &&
@@ -273,6 +274,7 @@ async function syncReceipts() {
       for (let i = 0; i < allMessages.length; i++) {
         const message = allMessages[i];
 
+        // Skip if already processed
         if (existingMessageIds.has(message.id)) {
           processedCount++;
           continue;
@@ -306,35 +308,54 @@ async function syncReceipts() {
             msgRes.data.payload.headers.find((h) => h.name === "Subject")
               ?.value || "";
 
-          // Filter by subject line - ONLY process actual receipt emails
+          // Determine vendor from query or subject - USE BROADER DETECTION
           let vendor = null;
-          let isReceipt = false;
 
-          // Uber: "Your [day] [time] trip with Uber"
-          if (
-            subject.match(
-              /Your (Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday) (morning|afternoon|evening|night) trip with Uber/i
-            )
-          ) {
+          // Check query first
+          if (query.includes("Uber")) {
             vendor = "Uber";
-            isReceipt = true;
-          }
-          // Lyft: "Your ride with [Driver] on [Month] [Day]"
-          else if (
-            subject.match(
-              /Your ride with .+ on (January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}/i
-            )
-          ) {
+          } else if (query.includes("Lyft")) {
             vendor = "Lyft";
-            isReceipt = true;
-          }
-          // Curb: "Your Curb Ride Receipt"
-          else if (subject.toLowerCase() === "your curb ride receipt") {
+          } else if (query.includes("Curb")) {
             vendor = "Curb";
-            isReceipt = true;
           }
 
-          if (vendor && isReceipt) {
+          // If no vendor from query, check subject with BROADER patterns
+          if (!vendor) {
+            if (subject.toLowerCase().includes("uber")) {
+              vendor = "Uber";
+            } else if (subject.toLowerCase().includes("lyft")) {
+              vendor = "Lyft";
+            } else if (subject.toLowerCase().includes("curb")) {
+              vendor = "Curb";
+            }
+          }
+
+          // NEW: More lenient receipt detection - check if it looks like a receipt
+          let isLikelyReceipt = false;
+          const subjectLower = subject.toLowerCase();
+
+          // Broad receipt indicators
+          if (
+            subjectLower.includes("receipt") ||
+            subjectLower.includes("trip with") ||
+            subjectLower.includes("ride with") ||
+            subjectLower.includes("your trip") ||
+            subjectLower.includes("your ride") ||
+            subjectLower.includes("trip receipt") ||
+            // Check body for dollar amounts (strong indicator)
+            (bodyData.includes("$") && bodyData.match(/\$\d+\.\d{2}/))
+          ) {
+            isLikelyReceipt = true;
+          }
+
+          // Log for debugging
+          if (vendor && !isLikelyReceipt) {
+            console.log(`  ℹ️  Possibly not a receipt: "${subject}"`);
+          }
+
+          // CRITICAL FIX: Try to parse ALL vendor emails, not just those matching strict patterns
+          if (vendor) {
             // Pass existing receipts for deduplication
             const parsedData = await parseReceipt(
               bodyData,
@@ -361,31 +382,44 @@ async function syncReceipts() {
                 });
               }
             } else {
-              // Check if it was skipped due to duplicate
-              // (parsedData will be null if duplicate or parsing failed)
-              duplicatesSkipped++;
+              // Only increment parse failures if it looked like a receipt
+              if (isLikelyReceipt) {
+                parseFailures++;
+                if (parseFailures <= 5) {
+                  console.log(
+                    `  ⚠️  Parse failed: "${subject.substring(0, 60)}..."`
+                  );
+                }
+              } else {
+                // Count as non-receipt
+                skippedCount++;
+                if (skippedCount <= 3) {
+                  console.log(`  ⊘ Not a receipt: "${subject}"`);
+                }
+              }
             }
           } else {
-            // Log skipped non-receipt emails
+            // No vendor detected
             skippedCount++;
-            if (skippedCount <= 5) {
-              // Only log first 5 to avoid spam
-              console.log(`  ⊘ Skipped non-receipt: "${subject}"`);
+            if (skippedCount <= 3) {
+              console.log(`  ⊘ No vendor: "${subject}"`);
             }
           }
         }
         processedCount++;
       }
 
-      console.log(
-        `  ✓ Query complete: ${allMessages.length} emails checked, ${skippedCount} non-receipts skipped`
-      );
+      console.log(`  ✓ Query complete: ${allMessages.length} emails checked`);
+      console.log(`    ✅ New receipts: ${newReceiptsCount}`);
+      console.log(`    ⊘ Skipped (non-receipts): ${skippedCount}`);
+      console.log(`    ⚠️  Parse failures: ${parseFailures}`);
       if (duplicatesSkipped > 0) {
-        console.log(
-          `  🔄 ${duplicatesSkipped} duplicates skipped (content-based detection)`
-        );
+        console.log(`    🔄 Duplicates skipped: ${duplicatesSkipped}`);
       }
-      skippedCount = 0; // Reset for next query
+
+      // Reset counters for next query
+      skippedCount = 0;
+      parseFailures = 0;
       duplicatesSkipped = 0;
     } catch (queryError) {
       console.error(`Error with "${query}":`, queryError.message);
