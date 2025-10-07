@@ -17,7 +17,6 @@ import {
 } from '@mui/material';
 import FilterListIcon from '@mui/icons-material/FilterList';
 import BoltIcon from '@mui/icons-material/Bolt';
-import LabelIcon from '@mui/icons-material/Label';
 import EmailIcon from '@mui/icons-material/Email';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -33,9 +32,6 @@ export default function FiltersSidebar({
   onBulkBilled,
   onForwardToEmail,
   onExportCSV,
-  newCategory,
-  setNewCategory,
-  onAddCategory
 }) {
   return (
     <Box sx={{ width: 350, p: 2, overflowY: 'auto', height: '100%' }}>
@@ -159,7 +155,7 @@ export default function FiltersSidebar({
       </Paper>
 
       {/* Bulk Actions Section */}
-      <Paper sx={{ p: 2, mb: 2 }} elevation={0}>
+      <Paper sx={{ p: 2 }} elevation={0}>
         <Stack direction="row" alignItems="center" spacing={1} mb={2}>
           <BoltIcon color="primary" />
           <Typography variant="h6" fontWeight="bold">Bulk Actions</Typography>
@@ -228,28 +224,6 @@ export default function FiltersSidebar({
             onClick={onExportCSV}
           >
             Export to CSV
-          </Button>
-        </Stack>
-      </Paper>
-
-      {/* Category Management Section */}
-      <Paper sx={{ p: 2 }} elevation={0}>
-        <Stack direction="row" alignItems="center" spacing={1} mb={2}>
-          <LabelIcon color="primary" />
-          <Typography variant="h6" fontWeight="bold">Manage Categories</Typography>
-        </Stack>
-
-        <Stack direction="row" spacing={1}>
-          <TextField
-            size="small"
-            placeholder="New category"
-            value={newCategory}
-            onChange={e => setNewCategory(e.target.value)}
-            onKeyPress={e => e.key === 'Enter' && onAddCategory()}
-            fullWidth
-          />
-          <Button variant="contained" onClick={onAddCategory} size="small">
-            Add
           </Button>
         </Stack>
       </Paper>

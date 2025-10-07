@@ -24,10 +24,9 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
     },
-    show: false, // Don't show until ready
+    show: false,
   });
 
-  // Maximize window on load
   win.maximize();
   win.show();
 
@@ -39,7 +38,6 @@ async function createWindow() {
   if (isDev) {
     console.log("Loading from Vite dev server:", devServerUrl);
     win.loadURL(devServerUrl);
-    // Only open DevTools if explicitly requested via env variable
     if (process.env.OPEN_DEVTOOLS === "1") {
       win.webContents.openDevTools();
     }
@@ -182,53 +180,37 @@ async function authorize() {
   return authorizationPromise;
 }
 
-// electron.js - syncReceipts with HTML stripping support
-
-// Add these helper functions before syncReceipts
+// Helper functions for HTML stripping and body extraction
 function stripHtmlSimple(html) {
   if (!html) return "";
-
   let text = html;
-
-  // Remove script, style, and their content
   text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
   text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
-
-  // Replace block elements with newlines
   text = text.replace(/<\/(div|p|br|tr|h[1-6]|li)>/gi, "\n");
   text = text.replace(/<(br|hr)[^>]*>/gi, "\n");
-
-  // Remove all HTML tags
   text = text.replace(/<[^>]+>/g, "");
-
-  // Decode common entities
   text = text.replace(/&nbsp;/gi, " ");
   text = text.replace(/&amp;/gi, "&");
   text = text.replace(/&lt;/gi, "<");
   text = text.replace(/&gt;/gi, ">");
   text = text.replace(/&quot;/gi, '"');
   text = text.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
-
-  // Clean whitespace
   text = text.replace(/\n{3,}/g, "\n\n");
   text = text.replace(/[ \t]+/g, " ");
   text = text.replace(/^\s+|\s+$/gm, "");
-
   return text.trim();
 }
 
 function extractEmailBody(msgRes) {
   const parts = msgRes.data.payload.parts || [];
 
-  // Try text/plain first (best for parsing)
   const textPart = parts.find((p) => p.mimeType === "text/plain");
   if (textPart?.body?.data) {
     const text = Buffer.from(textPart.body.data, "base64").toString();
-    console.log(`     ✓ Using text/plain (${text.length} chars)`);
+    console.log(`     ✓ text/plain (${text.length} chars)`);
     return text;
   }
 
-  // Try main body
   if (msgRes.data.payload.body?.data) {
     const text = Buffer.from(
       msgRes.data.payload.body.data,
@@ -240,31 +222,39 @@ function extractEmailBody(msgRes) {
       text.includes("<body") ||
       text.includes("<!DOCTYPE")
     ) {
-      console.log(
-        `     ⚠️  Main body is HTML (${text.length} chars), stripping...`
-      );
+      console.log(`     ⚠️  HTML (${text.length} chars), stripping...`);
       const stripped = stripHtmlSimple(text);
       console.log(`     ✓ Stripped to ${stripped.length} chars`);
       return stripped;
     }
 
-    console.log(`     ✓ Using main body (${text.length} chars)`);
+    console.log(`     ✓ main body (${text.length} chars)`);
     return text;
   }
 
-  // Last resort: HTML part
   const htmlPart = parts.find((p) => p.mimeType === "text/html");
   if (htmlPart?.body?.data) {
     const html = Buffer.from(htmlPart.body.data, "base64").toString();
-    console.log(
-      `     ⚠️  Only HTML available (${html.length} chars), stripping...`
-    );
+    console.log(`     ⚠️  HTML only (${html.length} chars), stripping...`);
     const stripped = stripHtmlSimple(html);
     console.log(`     ✓ Stripped to ${stripped.length} chars`);
     return stripped;
   }
 
   return null;
+}
+
+function getEmailReceivedDate(msgRes) {
+  if (msgRes.data.internalDate) {
+    return new Date(parseInt(msgRes.data.internalDate));
+  }
+
+  const dateHeader = msgRes.data.payload.headers.find((h) => h.name === "Date");
+  if (dateHeader) {
+    return new Date(dateHeader.value);
+  }
+
+  return new Date();
 }
 
 async function syncReceipts() {
@@ -343,25 +333,20 @@ async function syncReceipts() {
           total: allMessages.length,
           current: 0,
           query: query,
-          message: `Processing ${allMessages.length} emails`,
+          message: `Processing ${allMessages.length} emails (newest first)`,
         });
       }
 
       for (let i = 0; i < allMessages.length; i++) {
         const message = allMessages[i];
 
-        // Check if already processed
+        // Skip if already in database
         if (existingMessageIds.has(message.id)) {
           alreadyProcessedCount++;
-          if (alreadyProcessedCount <= 3) {
-            console.log(
-              `  ⏭️  Already have: ${message.id.substring(0, 10)}...`
-            );
-          }
           continue;
         }
 
-        console.log(`\n  📧 Email ${i + 1}/${allMessages.length}`);
+        console.log(`\n  📧 Email ${i + 1}/${allMessages.length} (NEW)`);
 
         if (i % 5 === 0 && win) {
           win.webContents.send("sync-progress", {
@@ -369,7 +354,9 @@ async function syncReceipts() {
             total: allMessages.length,
             current: i,
             query: query,
-            message: `Processing email ${i + 1}/${allMessages.length}`,
+            message: `Email ${i + 1}/${
+              allMessages.length
+            } (${newReceiptsCount} new)`,
           });
         }
 
@@ -384,18 +371,18 @@ async function syncReceipts() {
             ?.value || "";
         console.log(`     Subject: "${subject.substring(0, 60)}..."`);
 
-        // Extract body with HTML stripping
+        // Get email received date
+        const emailReceivedDate = getEmailReceivedDate(msgRes);
+        console.log(`     Received: ${emailReceivedDate.toLocaleDateString()}`);
+
+        // Extract body
         const bodyData = extractEmailBody(msgRes);
 
         if (!bodyData) {
-          console.log(`     ❌ No body data`);
+          console.log(`     ❌ No body`);
           skippedCount++;
           continue;
         }
-
-        // Show preview
-        const preview = bodyData.substring(0, 150).replace(/\s+/g, " ");
-        console.log(`     Preview: ${preview}...`);
 
         // Determine vendor
         let vendor = null;
@@ -419,20 +406,21 @@ async function syncReceipts() {
         }
 
         if (!vendor) {
-          console.log(`     ⊘ No vendor detected`);
+          console.log(`     ⊘ No vendor`);
           skippedCount++;
           continue;
         }
 
-        console.log(`     🏷️  Vendor: ${vendor}`);
+        console.log(`     🏷️  ${vendor}`);
 
-        // Parse the receipt
+        // Parse with email received date for validation
         const parsedData = await parseReceipt(
           bodyData,
           vendor,
           subject,
           parserPreference,
-          existingReceipts
+          existingReceipts,
+          emailReceivedDate
         );
 
         if (parsedData) {
@@ -447,7 +435,7 @@ async function syncReceipts() {
               total: allMessages.length,
               current: i + 1,
               query: query,
-              message: `Found: ${vendor} $${parsedData.total.toFixed(2)}`,
+              message: `${vendor} $${parsedData.total.toFixed(2)}`,
             });
           }
         } else {
@@ -456,11 +444,11 @@ async function syncReceipts() {
         }
       }
 
-      console.log(`\n  ✓ Query complete`);
+      console.log(`\n  ✓ Complete`);
       console.log(`    ✅ New: ${newReceiptsCount}`);
-      console.log(`    ⏭️  Already had: ${alreadyProcessedCount}`);
+      console.log(`    ⏭️  Skipped (existing): ${alreadyProcessedCount}`);
       console.log(`    ❌ Failed: ${parseFailures}`);
-      console.log(`    ⊘ Skipped: ${skippedCount}`);
+      console.log(`    ⊘ Skipped (other): ${skippedCount}`);
 
       alreadyProcessedCount = 0;
       skippedCount = 0;
@@ -570,7 +558,6 @@ app.whenReady().then(() => {
     return categories;
   });
 
-  // Settings handlers
   ipcMain.handle("settings:getParserPreference", () => {
     return store.get("parserPreference", "regex-first");
   });
@@ -633,16 +620,13 @@ app.whenReady().then(() => {
         format: "full",
       });
 
-      // Try to get HTML body
       let htmlBody = null;
       const parts = msgRes.data.payload.parts || [];
 
-      // First try to find text/html part
       const htmlPart = parts.find((p) => p.mimeType === "text/html");
       if (htmlPart?.body?.data) {
         htmlBody = Buffer.from(htmlPart.body.data, "base64").toString();
       } else if (msgRes.data.payload.body?.data) {
-        // If no parts, try the main body
         htmlBody = Buffer.from(
           msgRes.data.payload.body.data,
           "base64"
@@ -650,7 +634,6 @@ app.whenReady().then(() => {
       }
 
       if (!htmlBody) {
-        // Fallback to plain text
         const textPart = parts.find((p) => p.mimeType === "text/plain");
         if (textPart?.body?.data) {
           const textBody = Buffer.from(textPart.body.data, "base64").toString();
@@ -659,7 +642,6 @@ app.whenReady().then(() => {
       }
 
       if (htmlBody) {
-        // Create a temporary HTML file and open it
         const tempFilePath = path.join(
           app.getPath("temp"),
           `email_${messageId}.html`
@@ -676,7 +658,6 @@ app.whenReady().then(() => {
     }
   });
 
-  // Subject regex patterns - with defaults
   ipcMain.handle("settings:getUberSubjectRegex", () => {
     return store.get(
       "uberSubjectRegex",

@@ -1,3 +1,5 @@
+
+
 import React from 'react';
 import { DataGrid } from '@mui/x-data-grid';
 import { Chip, Box, IconButton, Tooltip } from '@mui/material';
@@ -120,20 +122,7 @@ export default function ReceiptsDataGrid({
           <span style={{ color: '#999' }}>—</span>
         ),
     },
-    {
-      field: 'parsedBy',
-      headerName: 'Parser',
-      width: 90,
-      renderCell: (params) => 
-        params.value ? (
-          <Chip 
-            label={params.value} 
-            size="small" 
-            variant="outlined"
-            color={params.value === 'gemini' ? 'secondary' : 'default'}
-          />
-        ) : null,
-    },
+    // REMOVED: parsedBy column
   ];
 
   const rows = receipts.map((receipt, index) => ({

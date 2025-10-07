@@ -1,4 +1,4 @@
-// src/services/receiptParser.js - COMPLETE VERSION
+// src/services/receiptParser.js - UPDATED WITH DATE VALIDATION
 const { parseReceiptWithGemini } = require("./geminiParser");
 const {
   parseUberEmail,
@@ -30,7 +30,52 @@ function parseAddressString(addressString) {
   }
 }
 
-// Generate a unique hash for a receipt based on key fields
+// Validate and correct date using email received date
+function validateDate(parsedDate, emailReceivedDate) {
+  if (!parsedDate || !emailReceivedDate) return parsedDate;
+
+  const parsed = new Date(parsedDate);
+  const received = new Date(emailReceivedDate);
+
+  // If parsed date is in the future compared to received date, it's wrong
+  if (parsed > received) {
+    console.log(
+      `     ⚠️  Parsed date (${parsed.toLocaleDateString()}) is after email received date (${received.toLocaleDateString()})`
+    );
+
+    // Use the year from the email received date
+    parsed.setFullYear(received.getFullYear());
+
+    // If still in the future, must be previous year
+    if (parsed > received) {
+      parsed.setFullYear(received.getFullYear() - 1);
+    }
+
+    console.log(`     ✓ Corrected to: ${parsed.toLocaleDateString()}`);
+    return parsed.toISOString();
+  }
+
+  // If parsed date is more than 1 year before received date, probably wrong year
+  const yearsDiff = (received - parsed) / (1000 * 60 * 60 * 24 * 365);
+  if (yearsDiff > 1) {
+    console.log(
+      `     ⚠️  Parsed date is ${yearsDiff.toFixed(
+        1
+      )} years before received date`
+    );
+    parsed.setFullYear(received.getFullYear());
+
+    if (parsed > received) {
+      parsed.setFullYear(received.getFullYear() - 1);
+    }
+
+    console.log(`     ✓ Corrected to: ${parsed.toLocaleDateString()}`);
+    return parsed.toISOString();
+  }
+
+  return parsed.toISOString();
+}
+
 function generateReceiptHash(receipt) {
   const hashData = {
     vendor: receipt.vendor,
@@ -53,22 +98,18 @@ function generateReceiptHash(receipt) {
   return hash;
 }
 
-// IMPROVED: Less aggressive duplicate detection
 function isDuplicateReceipt(newReceipt, existingReceipts) {
   const newHash = generateReceiptHash(newReceipt);
 
-  // First check: exact content hash match
   for (const existing of existingReceipts) {
     const existingHash = existing.contentHash || generateReceiptHash(existing);
 
     if (newHash === existingHash) {
-      console.log(`  🔄 Duplicate: Exact content match`);
-      console.log(`     Hash: ${newHash.substring(0, 16)}...`);
+      console.log(`  🔄 Duplicate: Exact match`);
       return true;
     }
   }
 
-  // Second check: same vendor, date, and very similar amount
   const newDate = new Date(newReceipt.date).toISOString().split("T")[0];
   const newTotal = Math.round(newReceipt.total * 100);
 
@@ -78,9 +119,7 @@ function isDuplicateReceipt(newReceipt, existingReceipts) {
     const existingDate = new Date(existing.date).toISOString().split("T")[0];
     const existingTotal = Math.round(existing.total * 100);
 
-    // Same vendor, same day, amount within 1 cent
     if (existingDate === newDate && Math.abs(existingTotal - newTotal) <= 1) {
-      // Check locations if available
       const sameStart =
         !newReceipt.startLocation?.city ||
         !existing.startLocation?.city ||
@@ -92,11 +131,6 @@ function isDuplicateReceipt(newReceipt, existingReceipts) {
 
       if (sameStart && sameEnd) {
         console.log(`  🔄 Duplicate: Same vendor/date/amount`);
-        console.log(
-          `     ${newReceipt.vendor} - ${newDate} - $${newReceipt.total.toFixed(
-            2
-          )}`
-        );
         return true;
       }
     }
@@ -105,7 +139,6 @@ function isDuplicateReceipt(newReceipt, existingReceipts) {
   return false;
 }
 
-// Check if subject matches the configured patterns for receipt emails
 function isReceiptEmail(subject, vendor) {
   const uberPattern = store.get(
     "uberSubjectRegex",
@@ -140,17 +173,17 @@ function isReceiptEmail(subject, vendor) {
   return false;
 }
 
-// IMPROVED: Hybrid parser with better logging
+// UPDATED: Add emailReceivedDate parameter
 async function parseReceipt(
   emailBody,
   vendor,
   subject,
   parserPreference = "regex-first",
-  existingReceipts = []
+  existingReceipts = [],
+  emailReceivedDate = null
 ) {
   console.log(`\n📧 Parsing ${vendor}: "${subject.substring(0, 50)}..."`);
 
-  // Log email characteristics for debugging
   const hasTotal = emailBody.match(/Total[:\s]*\$?([\d,]+\.?\d{0,2})/i);
   const hasDate = emailBody.match(
     /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}/i
@@ -161,90 +194,90 @@ async function parseReceipt(
     }`
   );
 
+  // Helper to validate and return parsed data
+  const finalizeParsed = (parsed) => {
+    if (!parsed) return null;
+
+    // Validate date against email received date
+    if (emailReceivedDate && parsed.date) {
+      parsed.date = validateDate(parsed.date, emailReceivedDate);
+    }
+
+    parsed.contentHash = generateReceiptHash(parsed);
+    if (isDuplicateReceipt(parsed, existingReceipts)) {
+      return null;
+    }
+    return parsed;
+  };
+
   // Mode: Gemini with subject filtering
   if (parserPreference === "gemini-subject-filter") {
     if (!isReceiptEmail(subject, vendor)) {
-      console.log(`  ⊘ Subject doesn't match ${vendor} pattern - skipping`);
+      console.log(`  ⊘ Subject doesn't match - skipping`);
       return null;
     }
 
-    console.log(`  ✅ Subject matches - parsing with Gemini`);
     const parsed = await parseReceiptWithGemini(emailBody, vendor);
-    if (parsed) {
-      parsed.contentHash = generateReceiptHash(parsed);
-      if (isDuplicateReceipt(parsed, existingReceipts)) {
-        return null;
-      }
-      console.log(`  ✅ SUCCESS: Gemini parsed $${parsed.total.toFixed(2)}`);
-      return parsed;
+    const result = finalizeParsed(parsed);
+    if (result) {
+      console.log(`  ✅ SUCCESS: $${result.total.toFixed(2)}`);
+      return result;
     }
-    console.log(`  ❌ FAILED: Gemini returned null`);
+    console.log(`  ❌ FAILED`);
     return null;
   }
 
   // Mode: Gemini only
   if (parserPreference === "gemini-only") {
-    console.log(`  🤖 Gemini AI Only mode`);
+    console.log(`  🤖 Gemini AI Only`);
     const parsed = await parseReceiptWithGemini(emailBody, vendor);
-    if (parsed) {
-      parsed.contentHash = generateReceiptHash(parsed);
-      if (isDuplicateReceipt(parsed, existingReceipts)) {
-        return null;
-      }
-      console.log(`  ✅ SUCCESS: Gemini parsed $${parsed.total.toFixed(2)}`);
-      return parsed;
+    const result = finalizeParsed(parsed);
+    if (result) {
+      console.log(`  ✅ SUCCESS: $${result.total.toFixed(2)}`);
+      return result;
     }
-    console.log(`  ❌ FAILED: Gemini returned null`);
+    console.log(`  ❌ FAILED`);
     return null;
   }
 
   // Mode: Regex only
   if (parserPreference === "regex-only") {
-    console.log(`  🔍 Regex Only mode`);
+    console.log(`  🔍 Regex Only`);
     let parsed = null;
     if (vendor === "Uber") parsed = parseUberEmail(emailBody);
     else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
     else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
 
-    if (parsed) {
-      parsed.contentHash = generateReceiptHash(parsed);
-      if (isDuplicateReceipt(parsed, existingReceipts)) {
-        return null;
-      }
-      console.log(`  ✅ SUCCESS: Regex parsed $${parsed.total.toFixed(2)}`);
-      return parsed;
+    const result = finalizeParsed(parsed);
+    if (result) {
+      console.log(`  ✅ SUCCESS: $${result.total.toFixed(2)}`);
+      return result;
     }
-    console.log(`  ❌ FAILED: Regex returned null`);
+    console.log(`  ❌ FAILED`);
     return null;
   }
 
   // Default: Regex-first with Gemini fallback
-  console.log(`  🔍 Trying Regex first...`);
+  console.log(`  🔍 Trying Regex...`);
   let parsed = null;
   if (vendor === "Uber") parsed = parseUberEmail(emailBody);
   else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
   else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
 
-  if (parsed) {
-    parsed.contentHash = generateReceiptHash(parsed);
-    if (isDuplicateReceipt(parsed, existingReceipts)) {
-      return null;
-    }
-    console.log(`  ✅ SUCCESS: Regex parsed $${parsed.total.toFixed(2)}`);
-    return parsed;
+  let result = finalizeParsed(parsed);
+  if (result) {
+    console.log(`  ✅ SUCCESS: Regex $${result.total.toFixed(2)}`);
+    return result;
   }
 
   // Fallback to Gemini
   console.log(`  ⚠️  Regex failed, trying Gemini...`);
   parsed = await parseReceiptWithGemini(emailBody, vendor);
+  result = finalizeParsed(parsed);
 
-  if (parsed) {
-    parsed.contentHash = generateReceiptHash(parsed);
-    if (isDuplicateReceipt(parsed, existingReceipts)) {
-      return null;
-    }
-    console.log(`  ✅ SUCCESS: Gemini parsed $${parsed.total.toFixed(2)}`);
-    return parsed;
+  if (result) {
+    console.log(`  ✅ SUCCESS: Gemini $${result.total.toFixed(2)}`);
+    return result;
   }
 
   console.log(`  ❌ FAILED: All methods failed`);

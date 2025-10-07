@@ -1,39 +1,21 @@
-// src/services/geminiParser.js
+// src/services/geminiParser.js - UPDATED: Use only selected model
 const Store = require("electron-store");
 const store = new Store();
 
 async function parseReceiptWithGemini(emailBody, vendor) {
-  // Try to get API key from store first, then fall back to environment variable
   const apiKey = store.get("geminiApiKey") || process.env.GEMINI_API_KEY;
 
   if (!apiKey || apiKey.trim() === "") {
-    console.log("⚠️  No Gemini API key configured - skipping AI parsing");
-    console.log(
-      "   Set API key in Settings or add GEMINI_API_KEY to .env file"
-    );
+    console.log("⚠️  No Gemini API key - skipping AI parsing");
     return null;
   }
 
   try {
-    console.log(`  🤖 Attempting Gemini parsing for ${vendor}...`);
-    console.log(`  📧 Email body length: ${emailBody.length} characters`);
+    console.log(`  🤖 Gemini parsing for ${vendor}...`);
 
-    // Get user's preferred model from settings, with fallbacks
-    const preferredModel = store.get("geminiModel", "gemini-2.5-flash");
-
-    // Use REST API directly to avoid SDK API version issues
-    // Start with user's preferred model, then try fallbacks
-    const modelNames = [
-      preferredModel, // User's preferred model first
-      "gemini-2.5-flash", // Fast and efficient (recommended)
-      "gemini-2.0-flash", // Also fast
-      "gemini-2.5-pro", // More capable but slower
-    ].filter((v, i, a) => a.indexOf(v) === i); // Remove duplicates
-
-    console.log(`  🎯 Preferred model: ${preferredModel}`);
-
-    let successfulParse = null;
-    let lastError = null;
+    // Get user's preferred model - USE ONLY THIS MODEL
+    const modelName = store.get("geminiModel", "gemini-2.5-flash");
+    console.log(`  🎯 Using model: ${modelName}`);
 
     const prompt = `You are parsing a ${vendor} rideshare receipt email. Extract the following information and return ONLY valid JSON with no markdown formatting, no code blocks, and no extra text.
 
@@ -68,207 +50,126 @@ CRITICAL:
 - If you cannot find a field, use null
 - The "total" and "date" fields are required`;
 
-    // Try each model until one works
-    for (const modelName of modelNames) {
-      try {
-        console.log(`  🔍 Trying model: ${modelName} via REST API...`);
+    const apiUrl = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey.trim()}`;
 
-        // Use the v1 API endpoint directly
-        const apiUrl = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey.trim()}`;
-
-        const requestBody = {
-          contents: [
+    const requestBody = {
+      contents: [
+        {
+          parts: [
             {
-              parts: [
-                {
-                  text: prompt,
-                },
-              ],
+              text: prompt,
             },
           ],
-        };
+        },
+      ],
+    };
 
-        console.log(
-          `  📤 Sending request to Gemini v1 API with ${modelName}...`
-        );
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
 
-        const response = await fetch(apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(requestBody),
-        });
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log(`  ❌ API error: ${response.status}`);
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.log(
-            `  ⚠️  Model ${modelName} failed: ${
-              response.status
-            } ${errorText.substring(0, 100)}`
-          );
-          lastError = new Error(`HTTP ${response.status}: ${errorText}`);
-          continue;
-        }
+    const data = await response.json();
 
-        const data = await response.json();
+    if (
+      !data.candidates ||
+      !data.candidates[0] ||
+      !data.candidates[0].content
+    ) {
+      console.log(`  ❌ Invalid response structure`);
+      throw new Error("Invalid response from API");
+    }
 
-        if (
-          !data.candidates ||
-          !data.candidates[0] ||
-          !data.candidates[0].content
-        ) {
-          console.log(
-            `  ⚠️  Model ${modelName} returned invalid response structure`
-          );
-          lastError = new Error("Invalid response structure from API");
-          continue;
-        }
+    let text = data.candidates[0].content.parts[0].text;
 
-        let text = data.candidates[0].content.parts[0].text;
+    // Clean up response
+    text = text
+      .replace(/```json\n?/g, "")
+      .replace(/```javascript\n?/g, "")
+      .replace(/```\n?/g, "")
+      .trim();
 
-        console.log(`  📥 Received response from Gemini`);
-        console.log(`  ✅ Model ${modelName} worked!`);
-        console.log(
-          `  📝 Raw response (first 200 chars): ${text.substring(0, 200)}...`
-        );
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (jsonError) {
+      console.error(`  ❌ JSON parse failed`);
+      console.error(`  Response: ${text.substring(0, 200)}...`);
+      throw new Error(`JSON parse error: ${jsonError.message}`);
+    }
 
-        // Clean up response - remove markdown code blocks if present
-        text = text
-          .replace(/```json\n?/g, "")
-          .replace(/```javascript\n?/g, "")
-          .replace(/```\n?/g, "")
-          .trim();
+    // Validate required fields
+    if (!parsed.total || isNaN(parseFloat(parsed.total))) {
+      throw new Error(`Invalid total: ${parsed.total}`);
+    }
+    if (!parsed.date) {
+      throw new Error(`Missing date field`);
+    }
 
-        console.log(
-          `  🧹 Cleaned response (first 200 chars): ${text.substring(
-            0,
-            200
-          )}...`
-        );
+    const totalAmount = parseFloat(parsed.total);
+    if (totalAmount <= 0) {
+      throw new Error(`Invalid amount: ${totalAmount}`);
+    }
 
-        let parsed;
-        try {
-          parsed = JSON.parse(text);
-          console.log(`  ✅ Successfully parsed JSON`);
-        } catch (jsonError) {
-          console.error(`  ❌ JSON parsing failed with ${modelName}`);
-          console.error(`  📄 Full cleaned text:\n${text}`);
-          lastError = new Error(
-            `JSON parse error with ${modelName}: ${jsonError.message}`
-          );
-          continue;
-        }
+    const tipAmount = parsed.tip ? parseFloat(parsed.tip) : 0;
 
-        // Validate required fields
-        if (!parsed.total || isNaN(parseFloat(parsed.total))) {
-          console.error(
-            `  ⚠️  Invalid total field with ${modelName}, trying next model...`
-          );
-          lastError = new Error(
-            `Missing or invalid 'total' field: ${parsed.total}`
-          );
-          continue;
-        }
-        if (!parsed.date) {
-          console.error(
-            `  ⚠️  Missing date field with ${modelName}, trying next model...`
-          );
-          lastError = new Error(`Missing 'date' field`);
-          continue;
-        }
-
-        // Convert and validate total
-        const totalAmount = parseFloat(parsed.total);
-        if (totalAmount <= 0) {
-          console.error(
-            `  ⚠️  Invalid total amount with ${modelName}, trying next model...`
-          );
-          lastError = new Error(`Invalid total amount: ${totalAmount}`);
-          continue;
-        }
-
-        // Convert and validate tip
-        const tipAmount = parsed.tip ? parseFloat(parsed.tip) : 0;
-
-        // Validate and convert date
-        let receiptDate;
-        try {
-          receiptDate = new Date(parsed.date);
-          if (isNaN(receiptDate.getTime())) {
-            throw new Error(`Invalid date: ${parsed.date}`);
-          }
-        } catch (dateError) {
-          console.error(`  ⚠️  Date parsing failed, using current date`);
-          receiptDate = new Date();
-        }
-
-        successfulParse = {
-          vendor,
-          total: totalAmount,
-          tip: tipAmount,
-          date: receiptDate.toISOString(),
-          startTime: parsed.startTime || null,
-          endTime: parsed.endTime || null,
-          startLocation: parsed.startLocation || null,
-          endLocation: parsed.endLocation || null,
-          category: null,
-          billed: false,
-          parsedBy: "gemini",
-        };
-
-        console.log(
-          `  ✓ Gemini successfully parsed ${vendor} receipt with ${modelName}: $${totalAmount.toFixed(
-            2
-          )} (tip: $${tipAmount.toFixed(2)})`
-        );
-
-        break; // Success! Exit the loop
-      } catch (modelError) {
-        console.log(`  ⚠️  Model ${modelName} failed: ${modelError.message}`);
-        lastError = modelError;
-        continue;
+    let receiptDate;
+    try {
+      receiptDate = new Date(parsed.date);
+      if (isNaN(receiptDate.getTime())) {
+        throw new Error(`Invalid date: ${parsed.date}`);
       }
+    } catch (dateError) {
+      console.error(`  ⚠️  Date parse failed, using today`);
+      receiptDate = new Date();
     }
 
-    // If we got a successful parse, return it
-    if (successfulParse) {
-      return successfulParse;
-    }
+    const result = {
+      vendor,
+      total: totalAmount,
+      tip: tipAmount,
+      date: receiptDate.toISOString(),
+      startTime: parsed.startTime || null,
+      endTime: parsed.endTime || null,
+      startLocation: parsed.startLocation || null,
+      endLocation: parsed.endLocation || null,
+      category: null,
+      billed: false,
+      parsedBy: "gemini",
+    };
 
-    // If we get here, all models failed
-    throw lastError || new Error("All models failed");
+    console.log(
+      `  ✓ Parsed: $${totalAmount.toFixed(2)} (tip: $${tipAmount.toFixed(2)})`
+    );
+
+    return result;
   } catch (error) {
-    console.error(`  ❌ Gemini parsing failed for ${vendor}:`);
-    console.error(`  📛 Error type: ${error.constructor.name}`);
-    console.error(`  📛 Error message: ${error.message}`);
+    console.error(`  ❌ Gemini failed: ${error.message}`);
 
-    // Check for specific API errors
+    // Check for specific errors
     if (
       error.message?.includes("API_KEY_INVALID") ||
       error.message?.includes("API key")
     ) {
-      console.error(
-        `  🔑 API key is invalid - please verify your API key is correct`
-      );
-      console.error(
-        `  💡 Get a new API key at: https://aistudio.google.com/app/apikey`
-      );
+      console.error(`  🔑 Invalid API key`);
     } else if (
       error.message?.includes("quota") ||
       error.message?.includes("429")
     ) {
-      console.error(
-        `  💰 Quota exceeded - you may need to upgrade your API plan`
-      );
+      console.error(`  💰 Quota exceeded`);
     } else if (error.message?.includes("403")) {
-      console.error(
-        `  🔒 API access forbidden - check if Gemini API is enabled in your Google Cloud Console`
-      );
+      console.error(`  🔒 API access forbidden`);
     } else if (error.message?.includes("404")) {
-      console.error(
-        `  🔧 Model not found - the model may not be available for your API key`
-      );
+      console.error(`  🔧 Model not found`);
     }
 
     return null;
