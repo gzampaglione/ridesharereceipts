@@ -7,6 +7,7 @@ const url = require("url");
 const { google } = require("googleapis");
 const Store = require("electron-store");
 const { parseReceipt } = require("./src/services/receiptParser");
+const { sendEmailViaGmail } = require("./src/services/gmailService");
 
 // Load environment variables
 require("dotenv").config();
@@ -689,6 +690,121 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:setCurbSubjectRegex", (event, regex) => {
     store.set("curbSubjectRegex", regex);
     return regex;
+  });
+
+  // Sync on startup setting
+  ipcMain.handle("settings:getSyncOnStartup", () => {
+    return store.get("syncOnStartup", false);
+  });
+
+  ipcMain.handle("settings:setSyncOnStartup", (event, value) => {
+    store.set("syncOnStartup", value);
+    return value;
+  });
+
+  // Send email via Gmail API
+  ipcMain.handle("email:send", async (event, to, subject, body) => {
+    try {
+      const auth = await authorize();
+      const result = await sendEmailViaGmail(auth, to, subject, body);
+      return result;
+    } catch (error) {
+      console.error("Send email error:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Backup database
+  ipcMain.handle("database:backup", async () => {
+    try {
+      const receipts = store.get("receipts", []);
+      const categories = store.get("categories", []);
+      const settings = {
+        parserPreference: store.get("parserPreference"),
+        geminiModel: store.get("geminiModel"),
+        testModeLimit: store.get("testModeLimit"),
+        syncOnStartup: store.get("syncOnStartup"),
+        uberSubjectRegex: store.get("uberSubjectRegex"),
+        lyftSubjectRegex: store.get("lyftSubjectRegex"),
+        curbSubjectRegex: store.get("curbSubjectRegex"),
+      };
+
+      const backup = {
+        version: "1.0",
+        exportDate: new Date().toISOString(),
+        receipts,
+        categories,
+        settings,
+      };
+
+      // Show save dialog
+      const { dialog } = require("electron");
+      const { filePath } = await dialog.showSaveDialog({
+        title: "Save Database Backup",
+        defaultPath: `receipts-backup-${
+          new Date().toISOString().split("T")[0]
+        }.json`,
+        filters: [
+          { name: "JSON Files", extensions: ["json"] },
+          { name: "All Files", extensions: ["*"] },
+        ],
+      });
+
+      if (filePath) {
+        await fs.writeFile(filePath, JSON.stringify(backup, null, 2));
+        console.log(`✅ Database backed up to: ${filePath}`);
+        return { success: true, path: filePath };
+      }
+
+      return { success: false, error: "Save cancelled" };
+    } catch (error) {
+      console.error("Backup error:", error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Restore database (optional - add if you want restore functionality)
+  ipcMain.handle("database:restore", async () => {
+    try {
+      const { dialog } = require("electron");
+      const { filePaths } = await dialog.showOpenDialog({
+        title: "Restore Database Backup",
+        filters: [
+          { name: "JSON Files", extensions: ["json"] },
+          { name: "All Files", extensions: ["*"] },
+        ],
+        properties: ["openFile"],
+      });
+
+      if (filePaths && filePaths[0]) {
+        const backupData = await fs.readFile(filePaths[0], "utf8");
+        const backup = JSON.parse(backupData);
+
+        // Validate backup structure
+        if (!backup.receipts || !Array.isArray(backup.receipts)) {
+          throw new Error("Invalid backup file format");
+        }
+
+        // Restore data
+        store.set("receipts", backup.receipts);
+        if (backup.categories) store.set("categories", backup.categories);
+        if (backup.settings) {
+          Object.keys(backup.settings).forEach((key) => {
+            if (backup.settings[key] !== undefined) {
+              store.set(key, backup.settings[key]);
+            }
+          });
+        }
+
+        console.log(`✅ Database restored from: ${filePaths[0]}`);
+        return { success: true, receiptsCount: backup.receipts.length };
+      }
+
+      return { success: false, error: "Restore cancelled" };
+    } catch (error) {
+      console.error("Restore error:", error);
+      return { success: false, error: error.message };
+    }
   });
 
   createWindow();

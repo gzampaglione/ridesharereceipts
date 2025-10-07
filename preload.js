@@ -58,4 +58,17 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.removeAllListeners("sync-progress");
     ipcRenderer.removeAllListeners("sync-complete");
   },
+
+  // Sync on startup
+  getSyncOnStartup: () => ipcRenderer.invoke("settings:getSyncOnStartup"),
+  setSyncOnStartup: (value) =>
+    ipcRenderer.invoke("settings:setSyncOnStartup", value),
+
+  // Send email via Gmail
+  sendEmail: (to, subject, body) =>
+    ipcRenderer.invoke("email:send", to, subject, body),
+
+  // Database backup/restore
+  backupDatabase: () => ipcRenderer.invoke("database:backup"),
+  restoreDatabase: () => ipcRenderer.invoke("database:restore"),
 });
