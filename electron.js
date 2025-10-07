@@ -182,17 +182,97 @@ async function authorize() {
   return authorizationPromise;
 }
 
-// electron.js - FIXED VERSION
-// Replace your syncReceipts function with this improved version
+// electron.js - syncReceipts with HTML stripping support
+
+// Add these helper functions before syncReceipts
+function stripHtmlSimple(html) {
+  if (!html) return "";
+
+  let text = html;
+
+  // Remove script, style, and their content
+  text = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+  text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+
+  // Replace block elements with newlines
+  text = text.replace(/<\/(div|p|br|tr|h[1-6]|li)>/gi, "\n");
+  text = text.replace(/<(br|hr)[^>]*>/gi, "\n");
+
+  // Remove all HTML tags
+  text = text.replace(/<[^>]+>/g, "");
+
+  // Decode common entities
+  text = text.replace(/&nbsp;/gi, " ");
+  text = text.replace(/&amp;/gi, "&");
+  text = text.replace(/&lt;/gi, "<");
+  text = text.replace(/&gt;/gi, ">");
+  text = text.replace(/&quot;/gi, '"');
+  text = text.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+
+  // Clean whitespace
+  text = text.replace(/\n{3,}/g, "\n\n");
+  text = text.replace(/[ \t]+/g, " ");
+  text = text.replace(/^\s+|\s+$/gm, "");
+
+  return text.trim();
+}
+
+function extractEmailBody(msgRes) {
+  const parts = msgRes.data.payload.parts || [];
+
+  // Try text/plain first (best for parsing)
+  const textPart = parts.find((p) => p.mimeType === "text/plain");
+  if (textPart?.body?.data) {
+    const text = Buffer.from(textPart.body.data, "base64").toString();
+    console.log(`     ✓ Using text/plain (${text.length} chars)`);
+    return text;
+  }
+
+  // Try main body
+  if (msgRes.data.payload.body?.data) {
+    const text = Buffer.from(
+      msgRes.data.payload.body.data,
+      "base64"
+    ).toString();
+
+    if (
+      text.includes("<html") ||
+      text.includes("<body") ||
+      text.includes("<!DOCTYPE")
+    ) {
+      console.log(
+        `     ⚠️  Main body is HTML (${text.length} chars), stripping...`
+      );
+      const stripped = stripHtmlSimple(text);
+      console.log(`     ✓ Stripped to ${stripped.length} chars`);
+      return stripped;
+    }
+
+    console.log(`     ✓ Using main body (${text.length} chars)`);
+    return text;
+  }
+
+  // Last resort: HTML part
+  const htmlPart = parts.find((p) => p.mimeType === "text/html");
+  if (htmlPart?.body?.data) {
+    const html = Buffer.from(htmlPart.body.data, "base64").toString();
+    console.log(
+      `     ⚠️  Only HTML available (${html.length} chars), stripping...`
+    );
+    const stripped = stripHtmlSimple(html);
+    console.log(`     ✓ Stripped to ${stripped.length} chars`);
+    return stripped;
+  }
+
+  return null;
+}
 
 async function syncReceipts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: "v1", auth });
 
-  // Get parser preference from settings
   const parserPreference = store.get("parserPreference", "regex-first");
 
-  // TEST MODE: Limit emails for faster testing
   let testModeLimit = store.get("testModeLimit", 0);
   if (!testModeLimit && process.env.TEST_MODE_LIMIT) {
     testModeLimit = parseInt(process.env.TEST_MODE_LIMIT);
@@ -203,19 +283,19 @@ async function syncReceipts() {
   }
 
   const queries = [
-    "label:rideshare-uber", // Note: lowercase with hyphen
-    "label:rideshare-lyft", // Note: lowercase with hyphen
-    "label:rideshare-curb", // Note: lowercase with hyphen
-    "label:rideshare", // Parent label to catch any others
+    "label:rideshare-uber",
+    "label:rideshare-lyft",
+    "label:rideshare-curb",
   ];
 
   const existingReceipts = store.get("receipts", []);
   const existingMessageIds = new Set(existingReceipts.map((r) => r.messageId));
   let newReceiptsCount = 0;
-  let duplicatesSkipped = 0;
-  let processedCount = 0;
+  let alreadyProcessedCount = 0;
   let skippedCount = 0;
   let parseFailures = 0;
+
+  console.log(`📊 Starting with ${existingReceipts.length} existing receipts`);
 
   for (const query of queries) {
     console.log(`\n🔍 ${query}`);
@@ -255,11 +335,7 @@ async function syncReceipts() {
         pageToken = res.data.nextPageToken;
       } while (pageToken);
 
-      console.log(
-        `  Found: ${allMessages.length}${
-          testModeLimit && testModeLimit > 0 ? " (test mode limited)" : ""
-        }`
-      );
+      console.log(`  Found: ${allMessages.length} emails`);
 
       if (win) {
         win.webContents.send("sync-progress", {
@@ -267,18 +343,25 @@ async function syncReceipts() {
           total: allMessages.length,
           current: 0,
           query: query,
-          message: `Processing ${allMessages.length} emails from ${query}`,
+          message: `Processing ${allMessages.length} emails`,
         });
       }
 
       for (let i = 0; i < allMessages.length; i++) {
         const message = allMessages[i];
 
-        // Skip if already processed
+        // Check if already processed
         if (existingMessageIds.has(message.id)) {
-          processedCount++;
+          alreadyProcessedCount++;
+          if (alreadyProcessedCount <= 3) {
+            console.log(
+              `  ⏭️  Already have: ${message.id.substring(0, 10)}...`
+            );
+          }
           continue;
         }
+
+        console.log(`\n  📧 Email ${i + 1}/${allMessages.length}`);
 
         if (i % 5 === 0 && win) {
           win.webContents.send("sync-progress", {
@@ -286,9 +369,7 @@ async function syncReceipts() {
             total: allMessages.length,
             current: i,
             query: query,
-            message: `Processing email ${i + 1}/${
-              allMessages.length
-            } from ${query}`,
+            message: `Processing email ${i + 1}/${allMessages.length}`,
           });
         }
 
@@ -298,136 +379,99 @@ async function syncReceipts() {
           format: "full",
         });
 
-        const bodyPart = msgRes.data.payload.parts?.find(
-          (p) => p.mimeType === "text/plain"
-        );
+        const subject =
+          msgRes.data.payload.headers.find((h) => h.name === "Subject")
+            ?.value || "";
+        console.log(`     Subject: "${subject.substring(0, 60)}..."`);
 
-        if (bodyPart?.body?.data) {
-          const bodyData = Buffer.from(bodyPart.body.data, "base64").toString();
-          const subject =
-            msgRes.data.payload.headers.find((h) => h.name === "Subject")
-              ?.value || "";
+        // Extract body with HTML stripping
+        const bodyData = extractEmailBody(msgRes);
 
-          // Determine vendor from query or subject - USE BROADER DETECTION
-          let vendor = null;
+        if (!bodyData) {
+          console.log(`     ❌ No body data`);
+          skippedCount++;
+          continue;
+        }
 
-          // Check query first
-          if (query.includes("Uber")) {
+        // Show preview
+        const preview = bodyData.substring(0, 150).replace(/\s+/g, " ");
+        console.log(`     Preview: ${preview}...`);
+
+        // Determine vendor
+        let vendor = null;
+        if (query.includes("uber")) {
+          vendor = "Uber";
+        } else if (query.includes("lyft")) {
+          vendor = "Lyft";
+        } else if (query.includes("curb")) {
+          vendor = "Curb";
+        }
+
+        if (!vendor) {
+          const subjectLower = subject.toLowerCase();
+          if (subjectLower.includes("uber")) {
             vendor = "Uber";
-          } else if (query.includes("Lyft")) {
+          } else if (subjectLower.includes("lyft")) {
             vendor = "Lyft";
-          } else if (query.includes("Curb")) {
+          } else if (subjectLower.includes("curb")) {
             vendor = "Curb";
           }
-
-          // If no vendor from query, check subject with BROADER patterns
-          if (!vendor) {
-            if (subject.toLowerCase().includes("uber")) {
-              vendor = "Uber";
-            } else if (subject.toLowerCase().includes("lyft")) {
-              vendor = "Lyft";
-            } else if (subject.toLowerCase().includes("curb")) {
-              vendor = "Curb";
-            }
-          }
-
-          // NEW: More lenient receipt detection - check if it looks like a receipt
-          let isLikelyReceipt = false;
-          const subjectLower = subject.toLowerCase();
-
-          // Broad receipt indicators
-          if (
-            subjectLower.includes("receipt") ||
-            subjectLower.includes("trip with") ||
-            subjectLower.includes("ride with") ||
-            subjectLower.includes("your trip") ||
-            subjectLower.includes("your ride") ||
-            subjectLower.includes("trip receipt") ||
-            // Check body for dollar amounts (strong indicator)
-            (bodyData.includes("$") && bodyData.match(/\$\d+\.\d{2}/))
-          ) {
-            isLikelyReceipt = true;
-          }
-
-          // Log for debugging
-          if (vendor && !isLikelyReceipt) {
-            console.log(`  ℹ️  Possibly not a receipt: "${subject}"`);
-          }
-
-          // CRITICAL FIX: Try to parse ALL vendor emails, not just those matching strict patterns
-          if (vendor) {
-            // Pass existing receipts for deduplication
-            const parsedData = await parseReceipt(
-              bodyData,
-              vendor,
-              subject,
-              parserPreference,
-              existingReceipts
-            );
-
-            if (parsedData) {
-              existingReceipts.push({ ...parsedData, messageId: message.id });
-              existingMessageIds.add(message.id);
-              newReceiptsCount++;
-
-              if (win) {
-                win.webContents.send("sync-progress", {
-                  phase: "processing",
-                  total: allMessages.length,
-                  current: i + 1,
-                  query: query,
-                  message: `Found receipt: ${vendor} - ${parsedData.total.toFixed(
-                    2
-                  )} (${i + 1}/${allMessages.length})`,
-                });
-              }
-            } else {
-              // Only increment parse failures if it looked like a receipt
-              if (isLikelyReceipt) {
-                parseFailures++;
-                if (parseFailures <= 5) {
-                  console.log(
-                    `  ⚠️  Parse failed: "${subject.substring(0, 60)}..."`
-                  );
-                }
-              } else {
-                // Count as non-receipt
-                skippedCount++;
-                if (skippedCount <= 3) {
-                  console.log(`  ⊘ Not a receipt: "${subject}"`);
-                }
-              }
-            }
-          } else {
-            // No vendor detected
-            skippedCount++;
-            if (skippedCount <= 3) {
-              console.log(`  ⊘ No vendor: "${subject}"`);
-            }
-          }
         }
-        processedCount++;
+
+        if (!vendor) {
+          console.log(`     ⊘ No vendor detected`);
+          skippedCount++;
+          continue;
+        }
+
+        console.log(`     🏷️  Vendor: ${vendor}`);
+
+        // Parse the receipt
+        const parsedData = await parseReceipt(
+          bodyData,
+          vendor,
+          subject,
+          parserPreference,
+          existingReceipts
+        );
+
+        if (parsedData) {
+          console.log(`     ✅ SUCCESS: $${parsedData.total.toFixed(2)}`);
+          existingReceipts.push({ ...parsedData, messageId: message.id });
+          existingMessageIds.add(message.id);
+          newReceiptsCount++;
+
+          if (win) {
+            win.webContents.send("sync-progress", {
+              phase: "processing",
+              total: allMessages.length,
+              current: i + 1,
+              query: query,
+              message: `Found: ${vendor} $${parsedData.total.toFixed(2)}`,
+            });
+          }
+        } else {
+          console.log(`     ❌ Parse failed`);
+          parseFailures++;
+        }
       }
 
-      console.log(`  ✓ Query complete: ${allMessages.length} emails checked`);
-      console.log(`    ✅ New receipts: ${newReceiptsCount}`);
-      console.log(`    ⊘ Skipped (non-receipts): ${skippedCount}`);
-      console.log(`    ⚠️  Parse failures: ${parseFailures}`);
-      if (duplicatesSkipped > 0) {
-        console.log(`    🔄 Duplicates skipped: ${duplicatesSkipped}`);
-      }
+      console.log(`\n  ✓ Query complete`);
+      console.log(`    ✅ New: ${newReceiptsCount}`);
+      console.log(`    ⏭️  Already had: ${alreadyProcessedCount}`);
+      console.log(`    ❌ Failed: ${parseFailures}`);
+      console.log(`    ⊘ Skipped: ${skippedCount}`);
 
-      // Reset counters for next query
+      alreadyProcessedCount = 0;
       skippedCount = 0;
       parseFailures = 0;
-      duplicatesSkipped = 0;
     } catch (queryError) {
       console.error(`Error with "${query}":`, queryError.message);
       if (win) {
         win.webContents.send("sync-progress", {
           phase: "error",
           query: query,
-          message: `Error with ${query}: ${queryError.message}`,
+          message: `Error: ${queryError.message}`,
         });
       }
     }
