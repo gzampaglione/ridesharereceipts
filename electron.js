@@ -598,16 +598,6 @@ app.whenReady().then(() => {
     }
   });
 
-  // Model selection
-  ipcMain.handle("settings:getGeminiModel", () => {
-    return store.get("geminiModel", "gemini-2.5-flash");
-  });
-
-  ipcMain.handle("settings:setGeminiModel", (event, model) => {
-    store.set("geminiModel", model);
-    return model;
-  });
-
   // Subject regex patterns - with defaults
   ipcMain.handle("settings:getUberSubjectRegex", () => {
     return store.get(
