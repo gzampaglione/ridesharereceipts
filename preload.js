@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   bulkUpdateReceipts: (messageIds, updates) =>
     ipcRenderer.invoke("receipts:bulkUpdate", messageIds, updates),
   openEmail: (messageId) => ipcRenderer.invoke("receipts:openEmail", messageId),
+  getEmailHtml: (messageId) =>
+    ipcRenderer.invoke("receipts:getEmailHtml", messageId),
   getUser: () => ipcRenderer.invoke("user:get"),
   getCategories: () => ipcRenderer.invoke("categories:get"),
   addCategory: (category) => ipcRenderer.invoke("categories:add", category),
