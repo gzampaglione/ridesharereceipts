@@ -105,6 +105,15 @@ function App() {
     [filtersState.filteredReceipts]
   );
 
+  // Calculate totals for selected receipts
+  const { totalAmount: selectedAmount, totalTips: selectedTips } =
+    useMemo(() => {
+      const selectedReceiptsList = filtersState.filteredReceipts.filter((r) =>
+        receiptsState.selectedReceipts.has(r.id || r.messageId)
+      );
+      return calculateTotals(selectedReceiptsList);
+    }, [filtersState.filteredReceipts, receiptsState.selectedReceipts]);
+
   // Snackbar helper
   const showSnackbar = (message, severity = "info") => {
     setSnackbar({ open: true, message, severity });
@@ -598,6 +607,8 @@ function App() {
               totalAmount={totalAmount}
               totalTips={totalTips}
               selectedCount={receiptsState.selectedReceipts.size}
+              selectedAmount={selectedAmount}
+              selectedTips={selectedTips}
             />
 
             {/* Data Grid */}
