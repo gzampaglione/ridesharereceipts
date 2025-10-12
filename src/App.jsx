@@ -13,6 +13,12 @@ import {
   Paper,
   Drawer,
   Typography,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  Button,
 } from "@mui/material";
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
@@ -70,6 +76,8 @@ function App() {
   const [forwardEmail, setForwardEmail] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "info" });
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [receiptsToDelete, setReceiptsToDelete] = useState([]);
 
   // Theme
   const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
@@ -135,11 +143,22 @@ function App() {
       setSyncing(false);
       setSyncProgress({ phase: 'complete', message: 'Sync complete!' });
       receiptsState.loadReceipts();
-      showSnackbar(`Sync complete! ${data.newReceipts} new receipts added.`, "success");
+      if (data.cancelled) {
+        showSnackbar(`Sync cancelled. ${data.newReceipts} new receipts saved.`, "warning");
+      } else {
+        showSnackbar(`Sync complete! ${data.newReceipts} new receipts added.`, "success");
+      }
+    };
+    const handleCancelled = () => {
+      setSyncing(false);
+      setSyncProgress({ phase: 'cancelled', message: 'Sync cancelled' });
+      receiptsState.loadReceipts();
+      showSnackbar("Sync cancelled by user", "info");
     };
 
     window.electronAPI.onSyncProgress(handleProgress);
     window.electronAPI.onSyncComplete(handleComplete);
+    window.electronAPI.onSyncCancelled(handleCancelled);
 
     return () => window.electronAPI.removeSyncListeners();
   }, [receiptsState.loadReceipts]);
@@ -171,6 +190,11 @@ function App() {
       setSyncing(false);
       setSyncProgress({ phase: 'idle', message: '' });
     }
+  };
+
+  const handleCancelSync = async () => {
+    await window.electronAPI.cancelSync();
+    showSnackbar("Cancelling sync...", "info");
   };
 
   const handleBulkUpdate = async (update) => {
@@ -268,6 +292,45 @@ function App() {
     showSnackbar(`${receiptsToExport.length} receipts exported.`, "success");
   };
 
+  const handleDeleteSelected = () => {
+    if (receiptsState.selectedReceipts.size === 0) {
+      showSnackbar("Please select one or more receipts to delete.", "warning");
+      return;
+    }
+
+    const receiptsToRemove = filtersState.filteredReceipts.filter(
+      r => receiptsState.selectedReceipts.has(r.id || r.messageId)
+    );
+
+    setReceiptsToDelete(receiptsToRemove);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    try {
+      const messageIdsToDelete = receiptsToDelete.map(r => r.messageId);
+      const result = await window.electronAPI.deleteReceipts(messageIdsToDelete);
+      
+      if (result.success) {
+        await receiptsState.loadReceipts();
+        receiptsState.clearSelection();
+        showSnackbar(`${receiptsToDelete.length} receipt${receiptsToDelete.length !== 1 ? 's' : ''} deleted successfully.`, "success");
+      } else {
+        showSnackbar(`Failed to delete receipts: ${result.error}`, "error");
+      }
+    } catch (error) {
+      showSnackbar(`Error deleting receipts: ${error.message}`, "error");
+    } finally {
+      setDeleteDialogOpen(false);
+      setReceiptsToDelete([]);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setReceiptsToDelete([]);
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -285,7 +348,7 @@ function App() {
             </Typography>
           </Box>
           <Box sx={{ p: 3, flexGrow: 1, overflow: 'auto' }}>
-            <SyncProgressPane progress={syncProgress} />
+            <SyncProgressPane progress={syncProgress} onCancel={handleCancelSync} />
           </Box>
         </Box>
       </Modal>
@@ -336,6 +399,49 @@ function App() {
         onSend={handleSendForwardEmail}
       />
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleCancelDelete}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Delete {receiptsToDelete.length} Receipt{receiptsToDelete.length !== 1 ? 's' : ''}?
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete {receiptsToDelete.length} selected receipt{receiptsToDelete.length !== 1 ? 's' : ''} from your local database? 
+            This action cannot be undone.
+          </DialogContentText>
+          {receiptsToDelete.length > 0 && receiptsToDelete.length <= 5 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                Receipts to delete:
+              </Typography>
+              {receiptsToDelete.map((receipt, idx) => (
+                <Typography key={idx} variant="body2" color="text.secondary">
+                  • {receipt.vendor} - {new Date(receipt.date).toLocaleDateString()} - ${receipt.total.toFixed(2)}
+                </Typography>
+              ))}
+            </Box>
+          )}
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
+            <Typography variant="body2" color="warning.contrastText">
+              ⚠️ Note: This only deletes from your local database. The original emails in Gmail will not be affected.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDelete}>
+            Cancel
+          </Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained">
+            Delete {receiptsToDelete.length} Receipt{receiptsToDelete.length !== 1 ? 's' : ''}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Box sx={{ display: 'flex', height: '100vh', flexDirection: 'column' }}>
         {/* App Header */}
         <AppHeader
@@ -378,6 +484,7 @@ function App() {
               onBulkBilled={(billed) => handleBulkUpdate({ billed })}
               onForwardToEmail={handleForwardToEmail}
               onExportCSV={handleExportCSV}
+              onDeleteSelected={handleDeleteSelected}
             />
           </Drawer>
 

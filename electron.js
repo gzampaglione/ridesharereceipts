@@ -21,6 +21,9 @@ let authorizationPromise = null;
 // Configuration: number of consecutive duplicates before prompting
 const DUPLICATE_THRESHOLD = 10;
 
+// Sync cancellation flag
+let syncCancelled = false;
+
 async function createWindow() {
   win = new BrowserWindow({
     width: 1600,
@@ -298,6 +301,9 @@ async function askContinueSync(vendor, consecutiveDuplicates) {
 }
 
 async function syncReceipts() {
+  // Reset cancellation flag
+  syncCancelled = false;
+
   const auth = await authorize();
   const gmail = google.gmail({ version: "v1", auth });
 
@@ -337,6 +343,15 @@ async function syncReceipts() {
   console.log(`📊 Starting with ${existingReceipts.length} existing receipts`);
 
   for (const query of queries) {
+    // Check if sync was cancelled
+    if (syncCancelled) {
+      console.log("\n🛑 Sync cancelled by user");
+      if (win) {
+        win.webContents.send("sync-cancelled");
+      }
+      break;
+    }
+
     console.log(`\n🔍 ${query}`);
 
     if (win) {
@@ -356,6 +371,9 @@ async function syncReceipts() {
       let pageToken = null;
 
       do {
+        // Check cancellation during message fetching
+        if (syncCancelled) break;
+
         const res = await gmail.users.messages.list({
           userId: "me",
           q: query,
@@ -391,6 +409,12 @@ async function syncReceipts() {
       }
 
       for (let i = 0; i < allMessages.length; i++) {
+        // Check if sync was cancelled
+        if (syncCancelled) {
+          console.log("\n🛑 Sync cancelled by user");
+          break;
+        }
+
         const message = allMessages[i];
 
         // Check if user chose to skip remaining emails for this vendor
@@ -567,20 +591,29 @@ async function syncReceipts() {
   }
 
   store.set("receipts", existingReceipts);
-  console.log(
-    `\n✅ Sync complete: +${newReceiptsCount} new (${existingReceipts.length} total)`
-  );
+
+  if (syncCancelled) {
+    console.log(
+      `\n🛑 Sync cancelled: ${newReceiptsCount} new receipts saved before cancellation`
+    );
+  } else {
+    console.log(
+      `\n✅ Sync complete: +${newReceiptsCount} new (${existingReceipts.length} total)`
+    );
+  }
 
   if (win) {
     win.webContents.send("sync-complete", {
       newReceipts: newReceiptsCount,
       totalReceipts: existingReceipts.length,
+      cancelled: syncCancelled,
     });
   }
 
   return {
     newReceipts: newReceiptsCount,
     totalReceipts: existingReceipts.length,
+    cancelled: syncCancelled,
   };
 }
 
@@ -588,6 +621,13 @@ app.whenReady().then(() => {
   ipcMain.handle("auth:google", authorize);
   ipcMain.handle("receipts:sync", syncReceipts);
   ipcMain.handle("receipts:get", () => store.get("receipts", []));
+
+  // Cancel sync handler
+  ipcMain.handle("receipts:cancelSync", () => {
+    syncCancelled = true;
+    console.log("🛑 Sync cancellation requested");
+    return { success: true };
+  });
 
   // Add this with the other receipt handlers
   ipcMain.handle("receipts:getEmailHtml", async (event, messageId) => {
@@ -791,7 +831,7 @@ app.whenReady().then(() => {
       const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
       const msgRes = await gmail.users.messages.get({
         userId: "me",
-        id: messageId,
+        id: message,
         format: "full",
       });
 
@@ -848,7 +888,7 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:getLyftSubjectRegex", () => {
     return store.get(
       "lyftSubjectRegex",
-      "Your ride with .+ on (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}"
+      "Your ride with .+ on (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}|Your (receipt|total charges) for rides on (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}"
     );
   });
 
@@ -874,6 +914,17 @@ app.whenReady().then(() => {
   ipcMain.handle("settings:setSyncOnStartup", (event, value) => {
     store.set("syncOnStartup", value);
     return value;
+  });
+
+  // Add this with the other receipt handlers in electron.js
+  ipcMain.handle("receipts:delete", (event, messageIds) => {
+    const receipts = store.get("receipts", []);
+    const filteredReceipts = receipts.filter(
+      (r) => !messageIds.includes(r.messageId)
+    );
+    store.set("receipts", filteredReceipts);
+    console.log(`🗑️  Deleted ${messageIds.length} receipts from database`);
+    return { success: true, deleted: messageIds.length };
   });
 
   // Send email via Gmail API
@@ -939,7 +990,7 @@ app.whenReady().then(() => {
     }
   });
 
-  // Restore database (optional - add if you want restore functionality)
+  // Restore database
   ipcMain.handle("database:restore", async () => {
     try {
       const { filePaths } = await dialog.showOpenDialog({

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   authenticate: () => ipcRenderer.invoke("auth:google"),
   clearAuth: () => ipcRenderer.invoke("auth:clear"),
   syncReceipts: () => ipcRenderer.invoke("receipts:sync"),
+  cancelSync: () => ipcRenderer.invoke("receipts:cancelSync"),
   getReceipts: () => ipcRenderer.invoke("receipts:get"),
   clearReceipts: () => ipcRenderer.invoke("receipts:clear"),
   updateReceipt: (messageId, updates) =>
@@ -33,11 +34,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setTestModeLimit: (limit) =>
     ipcRenderer.invoke("settings:setTestModeLimit", limit),
 
-  // Model selection
-  getGeminiModel: () => ipcRenderer.invoke("settings:getGeminiModel"),
-  setGeminiModel: (model) =>
-    ipcRenderer.invoke("settings:setGeminiModel", model),
-
   // Subject regex patterns
   getUberSubjectRegex: () => ipcRenderer.invoke("settings:getUberSubjectRegex"),
   setUberSubjectRegex: (regex) =>
@@ -49,7 +45,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   setCurbSubjectRegex: (regex) =>
     ipcRenderer.invoke("settings:setCurbSubjectRegex", regex),
 
-  // Address display mode - ADD THESE TWO LINES
+  // Address display mode
   getAddressDisplayMode: () =>
     ipcRenderer.invoke("settings:getAddressDisplayMode"),
   setAddressDisplayMode: (mode) =>
@@ -60,12 +56,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.on("sync-progress", (event, data) => callback(data)),
   onSyncComplete: (callback) =>
     ipcRenderer.on("sync-complete", (event, data) => callback(data)),
+  onSyncCancelled: (callback) =>
+    ipcRenderer.on("sync-cancelled", () => callback()),
 
   // Function to clean up listeners
   removeSyncListeners: () => {
     ipcRenderer.removeAllListeners("sync-progress");
     ipcRenderer.removeAllListeners("sync-complete");
+    ipcRenderer.removeAllListeners("sync-cancelled");
   },
+
+  // Add this to preload.js with the other receipt handlers
+  deleteReceipts: (messageIds) =>
+    ipcRenderer.invoke("receipts:delete", messageIds),
 
   // Sync on startup
   getSyncOnStartup: () => ipcRenderer.invoke("settings:getSyncOnStartup"),

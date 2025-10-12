@@ -6,11 +6,13 @@ import {
   Stack,
   Chip,
   Paper,
+  Button,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import CancelIcon from '@mui/icons-material/Cancel';
 
 const getPhaseInfo = (phase) => {
   switch(phase) {
@@ -22,6 +24,8 @@ const getPhaseInfo = (phase) => {
       return { icon: <CloudSyncIcon />, color: 'primary', label: 'Processing' };
     case 'complete':
       return { icon: <CheckCircleIcon />, color: 'success', label: 'Complete' };
+    case 'cancelled':
+      return { icon: <CancelIcon />, color: 'warning', label: 'Cancelled' };
     case 'error':
       return { icon: <ErrorIcon />, color: 'error', label: 'Error' };
     default:
@@ -29,10 +33,11 @@ const getPhaseInfo = (phase) => {
   }
 };
 
-export default function SyncProgressPane({ progress }) {
+export default function SyncProgressPane({ progress, onCancel }) {
   const phaseInfo = getPhaseInfo(progress.phase);
   const hasProgress = progress.total && progress.current !== undefined;
   const progressPercent = hasProgress ? Math.round((progress.current / progress.total) * 100) : 0;
+  const isActive = ['starting', 'searching', 'processing'].includes(progress.phase);
 
   return (
     <Box>
@@ -59,6 +64,19 @@ export default function SyncProgressPane({ progress }) {
             />
           </Stack>
         </Paper>
+
+        {/* Cancel Button */}
+        {isActive && onCancel && (
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<CancelIcon />}
+            onClick={onCancel}
+            fullWidth
+          >
+            Cancel Sync
+          </Button>
+        )}
 
         {/* Progress Bar */}
         {hasProgress && (
@@ -119,6 +137,14 @@ export default function SyncProgressPane({ progress }) {
           </Box>
         )}
 
+        {progress.phase === 'cancelled' && (
+          <Box sx={{ p: 2, bgcolor: 'warning.main', color: 'warning.contrastText', borderRadius: 1 }}>
+            <Typography variant="body2">
+              🛑 Sync was cancelled
+            </Typography>
+          </Box>
+        )}
+
         {progress.phase === 'error' && (
           <Box sx={{ p: 2, bgcolor: 'error.main', color: 'error.contrastText', borderRadius: 1 }}>
             <Typography variant="body2">
@@ -137,7 +163,7 @@ export default function SyncProgressPane({ progress }) {
             <br />
             • Already synced receipts are skipped automatically
             <br />
-            • You can close this window and continue working
+            • You can cancel and resume later - progress is saved
           </Typography>
         </Paper>
       </Stack>

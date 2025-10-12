@@ -21,6 +21,7 @@ import EmailIcon from '@mui/icons-material/Email';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
+import DeleteIcon from '@mui/icons-material/Delete';
 
 export default function FiltersSidebar({ 
   filters, 
@@ -32,6 +33,7 @@ export default function FiltersSidebar({
   onBulkBilled,
   onForwardToEmail,
   onExportCSV,
+  onDeleteSelected,
 }) {
   return (
     <Box sx={{ width: 350, p: 2, overflowY: 'auto', height: '100%' }}>
@@ -224,6 +226,20 @@ export default function FiltersSidebar({
             onClick={onExportCSV}
           >
             Export to CSV
+          </Button>
+
+          <Divider sx={{ my: 1 }} />
+
+          <Button 
+            variant="outlined" 
+            color="error"
+            fullWidth
+            size="small"
+            startIcon={<DeleteIcon />}
+            onClick={onDeleteSelected}
+            disabled={selectedCount === 0}
+          >
+            Delete Selected
           </Button>
         </Stack>
       </Paper>
