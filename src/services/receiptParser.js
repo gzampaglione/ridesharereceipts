@@ -5,6 +5,7 @@ const {
   parseLyftEmail,
   parseCurbEmail,
 } = require("./regexParsers");
+const { parseAmtrakEmail } = require("./amtrakParser");
 
 const Store = require("electron-store");
 const store = new Store();
@@ -149,6 +150,10 @@ function isReceiptEmail(subject, vendor) {
     "Your ride with .+ on (January|February|March|April|May|June|July|August|September|October|November|December) \\d{1,2}"
   );
   const curbPattern = store.get("curbSubjectRegex", "Your Curb Ride Receipt");
+  const amtrakPattern = store.get(
+    "amtrakSubjectRegex",
+    "eTicket and Receipt for Your|Amtrak: Refund Receipt"
+  );
 
   try {
     if (vendor === "Uber" && uberPattern) {
@@ -160,6 +165,9 @@ function isReceiptEmail(subject, vendor) {
     if (vendor === "Curb" && curbPattern) {
       return subject.toLowerCase() === curbPattern.toLowerCase();
     }
+    if (vendor === "Amtrak" && amtrakPattern) {
+      return new RegExp(amtrakPattern, "i").test(subject);
+    }
   } catch (regexError) {
     console.error(`Invalid regex pattern for ${vendor}:`, regexError.message);
     if (vendor === "Uber")
@@ -168,6 +176,11 @@ function isReceiptEmail(subject, vendor) {
       return subject.toLowerCase().includes("your ride with");
     if (vendor === "Curb")
       return subject.toLowerCase().includes("curb ride receipt");
+    if (vendor === "Amtrak")
+      return (
+        subject.toLowerCase().includes("eticket") ||
+        subject.toLowerCase().includes("refund receipt")
+      );
   }
 
   return false;
@@ -247,6 +260,7 @@ async function parseReceipt(
     if (vendor === "Uber") parsed = parseUberEmail(emailBody);
     else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
     else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
+    else if (vendor === "Amtrak") parsed = parseAmtrakEmail(emailBody, subject);
 
     const result = finalizeParsed(parsed);
     if (result) {
@@ -263,6 +277,7 @@ async function parseReceipt(
   if (vendor === "Uber") parsed = parseUberEmail(emailBody);
   else if (vendor === "Lyft") parsed = parseLyftEmail(emailBody);
   else if (vendor === "Curb") parsed = parseCurbEmail(emailBody);
+  else if (vendor === "Amtrak") parsed = parseAmtrakEmail(emailBody, subject);
 
   let result = finalizeParsed(parsed);
   if (result) {
@@ -289,6 +304,7 @@ module.exports = {
   parseUberEmail,
   parseLyftEmail,
   parseCurbEmail,
+  parseAmtrakEmail,
   isReceiptEmail,
   generateReceiptHash,
   isDuplicateReceipt,

@@ -1,5 +1,5 @@
 // src/components/SettingsDialog.jsx
-import React from 'react';
+import React from "react";
 import {
   Dialog,
   DialogTitle,
@@ -22,12 +22,12 @@ import {
   Chip,
   FormControlLabel,
   Switch,
-} from '@mui/material';
-import SettingsIcon from '@mui/icons-material/Settings';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
-import SaveIcon from '@mui/icons-material/Save';
+} from "@mui/material";
+import SettingsIcon from "@mui/icons-material/Settings";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
+import SaveIcon from "@mui/icons-material/Save";
 
 export default function SettingsDialog({
   open,
@@ -50,6 +50,8 @@ export default function SettingsDialog({
   setLyftSubjectRegex,
   curbSubjectRegex,
   setCurbSubjectRegex,
+  amtrakSubjectRegex,
+  setAmtrakSubjectRegex,
   syncOnStartup,
   setSyncOnStartup,
   addressDisplayMode,
@@ -70,8 +72,8 @@ export default function SettingsDialog({
           <Typography variant="h6">Settings</Typography>
         </Stack>
       </DialogTitle>
-      
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+
+      <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
         <Tabs value={settingsTab} onChange={(e, v) => setSettingsTab(v)}>
           <Tab label="Parser" />
           <Tab label="Categories" />
@@ -95,20 +97,28 @@ export default function SettingsDialog({
                 label="Parser Preference"
                 onChange={(e) => setParserPreference(e.target.value)}
               >
-                <MenuItem value="regex-first">Regex First (Gemini Fallback)</MenuItem>
+                <MenuItem value="regex-first">
+                  Regex First (Gemini Fallback)
+                </MenuItem>
                 <MenuItem value="regex-only">Regex Only</MenuItem>
                 <MenuItem value="gemini-only">Gemini AI Only</MenuItem>
-                <MenuItem value="gemini-subject-filter">Gemini AI with Subject Filtering</MenuItem>
+                <MenuItem value="gemini-subject-filter">
+                  Gemini AI with Subject Filtering
+                </MenuItem>
               </Select>
             </FormControl>
 
-            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+            <Paper sx={{ p: 2, bgcolor: "action.hover" }}>
               <Typography variant="body2" color="text.secondary">
                 <strong>Parser Modes:</strong>
-                <br />• <strong>Regex First:</strong> Fast pattern matching with AI fallback
-                <br />• <strong>Regex Only:</strong> Traditional pattern matching (no API needed)
-                <br />• <strong>Gemini AI Only:</strong> AI-powered parsing (requires API key)
-                <br />• <strong>Gemini with Subject Filtering:</strong> Most efficient AI mode
+                <br />• <strong>Regex First:</strong> Fast pattern matching with
+                AI fallback
+                <br />• <strong>Regex Only:</strong> Traditional pattern
+                matching (no API needed)
+                <br />• <strong>Gemini AI Only:</strong> AI-powered parsing
+                (requires API key)
+                <br />• <strong>Gemini with Subject Filtering:</strong> Most
+                efficient AI mode
               </Typography>
             </Paper>
 
@@ -133,7 +143,7 @@ export default function SettingsDialog({
                   >
                     {showGeminiKey ? <VisibilityOffIcon /> : <VisibilityIcon />}
                   </IconButton>
-                )
+                ),
               }}
             />
 
@@ -144,18 +154,24 @@ export default function SettingsDialog({
                 label="Gemini Model"
                 onChange={(e) => setGeminiModel(e.target.value)}
               >
-                <MenuItem value="gemini-2.5-flash">Gemini 2.5 Flash (Fastest, Recommended)</MenuItem>
-                <MenuItem value="gemini-2.5-pro">Gemini 2.5 Pro (Most Capable, Slower)</MenuItem>
+                <MenuItem value="gemini-2.5-flash">
+                  Gemini 2.5 Flash (Fastest, Recommended)
+                </MenuItem>
+                <MenuItem value="gemini-2.5-pro">
+                  Gemini 2.5 Pro (Most Capable, Slower)
+                </MenuItem>
                 <MenuItem value="gemini-2.0-flash">Gemini 2.0 Flash</MenuItem>
               </Select>
             </FormControl>
 
-            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+            <Paper
+              sx={{ p: 2, bgcolor: "info.light", color: "info.contrastText" }}
+            >
               <Typography variant="body2" fontWeight="bold" gutterBottom>
                 💡 Model Selection:
               </Typography>
               <Typography variant="body2">
-                Flash models are recommended. They're fast and cost-effective. 
+                Flash models are recommended. They're fast and cost-effective.
                 Only use Pro if experiencing parsing issues.
               </Typography>
             </Paper>
@@ -173,7 +189,8 @@ export default function SettingsDialog({
               label="Sync automatically on startup"
             />
             <Typography variant="caption" color="text.secondary">
-              When enabled, the app will check for new receipts every time it starts
+              When enabled, the app will check for new receipts every time it
+              starts
             </Typography>
           </Stack>
         )}
@@ -189,13 +206,18 @@ export default function SettingsDialog({
               Create custom categories to organize your rideshare receipts.
             </Typography>
 
-            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+            <Paper sx={{ p: 2, bgcolor: "action.hover" }}>
               <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
                 Current Categories
               </Typography>
               <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
-                {categories.map(cat => (
-                  <Chip key={cat} label={cat} color="primary" variant="outlined" />
+                {categories.map((cat) => (
+                  <Chip
+                    key={cat}
+                    label={cat}
+                    color="primary"
+                    variant="outlined"
+                  />
                 ))}
               </Stack>
             </Paper>
@@ -212,20 +234,22 @@ export default function SettingsDialog({
                 label="Category Name"
                 placeholder="e.g., Client Meetings, Airport Trips"
                 value={newCategory}
-                onChange={e => setNewCategory(e.target.value)}
-                onKeyPress={e => e.key === 'Enter' && onAddCategory()}
+                onChange={(e) => setNewCategory(e.target.value)}
+                onKeyPress={(e) => e.key === "Enter" && onAddCategory()}
               />
-              <Button 
-                variant="contained" 
+              <Button
+                variant="contained"
                 onClick={onAddCategory}
                 disabled={!newCategory.trim()}
-                sx={{ minWidth: '100px' }}
+                sx={{ minWidth: "100px" }}
               >
                 Add
               </Button>
             </Stack>
 
-            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+            <Paper
+              sx={{ p: 2, bgcolor: "info.light", color: "info.contrastText" }}
+            >
               <Typography variant="body2" fontWeight="bold" gutterBottom>
                 💡 Category Tips:
               </Typography>
@@ -257,12 +281,18 @@ export default function SettingsDialog({
               onChange={(e) => setTestModeLimit(parseInt(e.target.value) || 0)}
               helperText="Limit emails per label for testing. Set to 0 for production."
               InputProps={{
-                inputProps: { min: 0, max: 500 }
+                inputProps: { min: 0, max: 500 },
               }}
             />
 
             {testModeLimit > 0 && (
-              <Paper sx={{ p: 2, bgcolor: 'warning.light', color: 'warning.contrastText' }}>
+              <Paper
+                sx={{
+                  p: 2,
+                  bgcolor: "warning.light",
+                  color: "warning.contrastText",
+                }}
+              >
                 <Typography variant="body2" fontWeight="bold">
                   ⚠️ Test Mode Active
                 </Typography>
@@ -290,13 +320,17 @@ export default function SettingsDialog({
               </Select>
             </FormControl>
 
-            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+            <Paper
+              sx={{ p: 2, bgcolor: "info.light", color: "info.contrastText" }}
+            >
               <Typography variant="body2" fontWeight="bold" gutterBottom>
                 💡 Location Display:
               </Typography>
               <Typography variant="body2">
-                • <strong>City, State:</strong> Shows compact location (e.g., "Philadelphia, PA")
-                <br />• <strong>Full Address:</strong> Shows complete street address
+                • <strong>City, State:</strong> Shows compact location (e.g.,
+                "Philadelphia, PA")
+                <br />• <strong>Full Address:</strong> Shows complete street
+                address
               </Typography>
             </Paper>
 
@@ -307,7 +341,8 @@ export default function SettingsDialog({
             </Typography>
 
             <Typography variant="body2" color="text.secondary">
-              Regex patterns to identify receipt emails. Leave blank for defaults.
+              Regex patterns to identify receipt emails. Leave blank for
+              defaults.
             </Typography>
 
             <TextField
@@ -341,12 +376,25 @@ export default function SettingsDialog({
               helperText="Regex pattern to identify Curb receipts"
             />
 
-            <Paper sx={{ p: 2, bgcolor: 'info.light', color: 'info.contrastText' }}>
+            <TextField
+              fullWidth
+              label="Amtrak Subject Pattern"
+              value={amtrakSubjectRegex}
+              onChange={(e) => setAmtrakSubjectRegex(e.target.value)}
+              placeholder="eTicket and Receipt for Your|Amtrak: Refund Receipt"
+              helperText="Regex pattern to identify Amtrak receipts and refunds"
+              multiline
+              rows={2}
+            />
+
+            <Paper
+              sx={{ p: 2, bgcolor: "info.light", color: "info.contrastText" }}
+            >
               <Typography variant="body2" fontWeight="bold" gutterBottom>
                 💡 Subject Filter Tips:
               </Typography>
               <Typography variant="body2">
-                Use regex syntax (e.g., .+ for any text, | for OR). Ensures only 
+                Use regex syntax (e.g., .+ for any text, | for OR). Ensures only
                 receipt emails are processed, not promotions.
               </Typography>
             </Paper>
@@ -360,13 +408,13 @@ export default function SettingsDialog({
               Backup & Data Management
             </Typography>
 
-            <Paper sx={{ p: 2, bgcolor: 'action.hover' }}>
+            <Paper sx={{ p: 2, bgcolor: "action.hover" }}>
               <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
                 💾 Database Backup
               </Typography>
               <Typography variant="body2" color="text.secondary" paragraph>
-                Save a backup copy of your receipts database. This exports all your 
-                receipts to a JSON file you can restore later.
+                Save a backup copy of your receipts database. This exports all
+                your receipts to a JSON file you can restore later.
               </Typography>
               <Button
                 variant="contained"
@@ -385,12 +433,15 @@ export default function SettingsDialog({
               Danger Zone
             </Typography>
 
-            <Paper sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText' }}>
+            <Paper
+              sx={{ p: 2, bgcolor: "error.light", color: "error.contrastText" }}
+            >
               <Typography variant="body2" fontWeight="bold" gutterBottom>
                 ⚠️ Warning
               </Typography>
               <Typography variant="body2">
-                This action is permanent and cannot be undone. Please proceed with caution.
+                This action is permanent and cannot be undone. Please proceed
+                with caution.
               </Typography>
             </Paper>
 
@@ -399,8 +450,8 @@ export default function SettingsDialog({
                 Clear All Downloaded Receipts
               </Typography>
               <Typography variant="body2" color="text.secondary" paragraph>
-                Delete all locally stored receipts. You'll need to re-sync from Gmail. 
-                Your Gmail emails will not be affected.
+                Delete all locally stored receipts. You'll need to re-sync from
+                Gmail. Your Gmail emails will not be affected.
               </Typography>
               <Button
                 variant="outlined"
@@ -416,7 +467,7 @@ export default function SettingsDialog({
           </Stack>
         )}
       </DialogContent>
-      
+
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button onClick={onSave} variant="contained" color="primary">

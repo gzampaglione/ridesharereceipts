@@ -322,6 +322,7 @@ async function syncReceipts() {
     "label:rideshare-uber",
     "label:rideshare-lyft",
     "label:rideshare-curb",
+    "label:rideshare-amtrak",
   ];
 
   const existingReceipts = store.get("receipts", []);
@@ -476,6 +477,8 @@ async function syncReceipts() {
           vendor = "Lyft";
         } else if (query.includes("curb")) {
           vendor = "Curb";
+        } else if (query.includes("amtrak")) {
+          vendor = "Amtrak";
         }
 
         if (!vendor) {
@@ -486,6 +489,11 @@ async function syncReceipts() {
             vendor = "Lyft";
           } else if (subjectLower.includes("curb")) {
             vendor = "Curb";
+          } else if (
+            subjectLower.includes("amtrak") ||
+            subjectLower.includes("eticket")
+          ) {
+            vendor = "Amtrak";
           }
         }
 
@@ -903,6 +911,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle("settings:setCurbSubjectRegex", (event, regex) => {
     store.set("curbSubjectRegex", regex);
+    return regex;
+  });
+
+  ipcMain.handle("settings:getAmtrakSubjectRegex", () => {
+    return store.get(
+      "amtrakSubjectRegex",
+      "eTicket and Receipt for Your|Amtrak: Refund Receipt"
+    );
+  });
+
+  ipcMain.handle("settings:setAmtrakSubjectRegex", (event, regex) => {
+    store.set("amtrakSubjectRegex", regex);
     return regex;
   });
 

@@ -5,7 +5,7 @@ export function useFilters(receipts) {
     startDate: "",
     endDate: "",
     location: "",
-    vendors: { Uber: true, Lyft: true, Curb: true },
+    vendors: { Uber: true, Lyft: true, Curb: true, Amtrak: true },
     category: "all",
     billedStatus: "all",
   });
@@ -54,7 +54,7 @@ export function useFilters(receipts) {
     const activeVendors = Object.keys(filters.vendors).filter(
       (v) => filters.vendors[v]
     );
-    if (activeVendors.length < 3) {
+    if (activeVendors.length < 4) {
       filtered = filtered.filter((r) => activeVendors.includes(r.vendor));
     }
 

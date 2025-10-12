@@ -1,19 +1,38 @@
-import React, { useState } from 'react';
-import { DataGrid } from '@mui/x-data-grid';
-import { Chip, Box, IconButton, Tooltip, ToggleButtonGroup, ToggleButton, Stack, Typography } from '@mui/material';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import ViewComfyIcon from '@mui/icons-material/ViewComfy';
-import ViewCompactIcon from '@mui/icons-material/ViewCompact';
-import DensitySmallIcon from '@mui/icons-material/DensitySmall';
+import React, { useState, useMemo } from "react";
+import { DataGrid } from "@mui/x-data-grid";
+import {
+  Chip,
+  Box,
+  IconButton,
+  Tooltip,
+  ToggleButtonGroup,
+  ToggleButton,
+  Stack,
+  Typography,
+} from "@mui/material";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ViewComfyIcon from "@mui/icons-material/ViewComfy";
+import ViewCompactIcon from "@mui/icons-material/ViewCompact";
+import DensitySmallIcon from "@mui/icons-material/DensitySmall";
+import {
+  groupReceiptsWithCancellations,
+  calculateGroupedTotal,
+} from "../utils/receiptGrouping";
 
-export default function ReceiptsDataGrid({ 
-  receipts, 
-  selectedReceipts, 
+export default function ReceiptsDataGrid({
+  receipts,
+  selectedReceipts,
   onSelectionChange,
-  addressDisplayMode = 'city'
+  addressDisplayMode = "city",
 }) {
-  const [density, setDensity] = useState('standard'); // 'comfortable', 'standard', 'compact'
+  const [density, setDensity] = useState("standard"); // 'comfortable', 'standard', 'compact'
+
+  // Group receipts with their cancellations
+  const groupedReceipts = useMemo(
+    () => groupReceiptsWithCancellations(receipts),
+    [receipts]
+  );
 
   const handleOpenEmail = async (messageId) => {
     const result = await window.electronAPI.openEmail(messageId);
@@ -23,19 +42,24 @@ export default function ReceiptsDataGrid({
   };
 
   const getLocationDisplay = (location, mode) => {
-    if (!location || !location.city) return '—';
-    
-    if (mode === 'city') {
-      return `${location.city}, ${location.state || ''}`.trim().replace(/,\s*$/, '');
+    if (!location || !location.city) return "—";
+
+    if (mode === "city") {
+      return `${location.city}, ${location.state || ""}`
+        .trim()
+        .replace(/,\s*$/, "");
     } else {
-      return location.address || `${location.city}, ${location.state || ''}`.trim().replace(/,\s*$/, '');
+      return (
+        location.address ||
+        `${location.city}, ${location.state || ""}`.trim().replace(/,\s*$/, "")
+      );
     }
   };
 
   const columns = [
     {
-      field: 'actions',
-      headerName: '',
+      field: "actions",
+      headerName: "",
       width: 60,
       sortable: false,
       filterable: false,
@@ -53,107 +77,172 @@ export default function ReceiptsDataGrid({
       ),
     },
     {
-      field: 'total',
-      headerName: 'Total',
-      width: 90,
-      type: 'number',
-      valueFormatter: (params) => `$${params.value.toFixed(2)}`,
+      field: "total",
+      headerName: "Total",
+      width: 120,
+      type: "number",
+      renderCell: (params) => {
+        const receipt = params.row;
+        if (receipt.isRefund) {
+          return (
+            <span style={{ color: "#d32f2f", fontWeight: 600 }}>
+              -${Math.abs(receipt.total).toFixed(2)}
+            </span>
+          );
+        }
+        if (receipt.isGroup && receipt.hasRefund) {
+          const netAmount = calculateGroupedTotal(receipt);
+          return (
+            <Box>
+              <Typography variant="body2" fontWeight={600}>
+                ${receipt.total.toFixed(2)}
+              </Typography>
+              <Typography variant="caption" color="error.main">
+                Net: ${netAmount.toFixed(2)}
+              </Typography>
+            </Box>
+          );
+        }
+        return `$${receipt.total.toFixed(2)}`;
+      },
     },
     {
-      field: 'date',
-      headerName: 'Date',
+      field: "date",
+      headerName: "Date",
       width: 110,
       valueFormatter: (params) => new Date(params.value).toLocaleDateString(),
     },
     {
-      field: 'startTime',
-      headerName: 'Pickup',
+      field: "startTime",
+      headerName: "Pickup",
       width: 90,
-      valueGetter: (params) => params.row.startTime || '—',
+      valueGetter: (params) => params.row.startTime || "—",
     },
     {
-      field: 'endTime',
-      headerName: 'Dropoff',
+      field: "endTime",
+      headerName: "Dropoff",
       width: 90,
-      valueGetter: (params) => params.row.endTime || '—',
+      valueGetter: (params) => params.row.endTime || "—",
     },
     {
-      field: 'vendor',
-      headerName: 'Vendor',
-      width: 90,
+      field: "vendor",
+      headerName: "Vendor",
+      width: 110,
       renderCell: (params) => (
-        <Chip 
-          label={params.value}
-          size="small"
-          sx={{
-            backgroundColor: 
-              params.value === 'Uber' ? '#000' : 
-              params.value === 'Lyft' ? '#ff00e6' : 
-              '#ffc107',
-            color: params.value === 'Uber' ? '#fff' : 
-                   params.value === 'Lyft' ? '#fff' : 
-                   '#000',
-            fontWeight: 600,
-            height: density === 'compact' ? '20px' : '24px',
-            fontSize: density === 'compact' ? '0.7rem' : '0.8125rem',
-          }}
-        />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Chip
+            label={params.value}
+            size="small"
+            sx={{
+              backgroundColor:
+                params.value === "Uber"
+                  ? "#000"
+                  : params.value === "Lyft"
+                  ? "#ff00e6"
+                  : params.value === "Curb"
+                  ? "#ffc107"
+                  : params.value === "Amtrak"
+                  ? "#003d7a"
+                  : "#999",
+              color:
+                params.value === "Uber"
+                  ? "#fff"
+                  : params.value === "Lyft"
+                  ? "#fff"
+                  : params.value === "Curb"
+                  ? "#000"
+                  : params.value === "Amtrak"
+                  ? "#fff"
+                  : "#fff",
+              fontWeight: 600,
+              height: density === "compact" ? "20px" : "24px",
+              fontSize: density === "compact" ? "0.7rem" : "0.8125rem",
+            }}
+          />
+          {params.row.isRefund && (
+            <Tooltip title="Refund">
+              <Chip
+                label="R"
+                size="small"
+                color="error"
+                sx={{ height: "18px", fontSize: "0.65rem" }}
+              />
+            </Tooltip>
+          )}
+          {params.row.isGroup && params.row.hasRefund && (
+            <Tooltip title="Has refund">
+              <Chip
+                label="!"
+                size="small"
+                color="warning"
+                sx={{ height: "18px", fontSize: "0.65rem" }}
+              />
+            </Tooltip>
+          )}
+        </Box>
       ),
     },
     {
-      field: 'fromLocation',
-      headerName: 'From',
+      field: "fromLocation",
+      headerName: "From",
       flex: 1,
-      minWidth: addressDisplayMode === 'city' ? 150 : 250,
-      valueGetter: (params) => getLocationDisplay(params.row.startLocation, addressDisplayMode),
+      minWidth: addressDisplayMode === "city" ? 150 : 250,
+      valueGetter: (params) =>
+        getLocationDisplay(params.row.startLocation, addressDisplayMode),
     },
     {
-      field: 'toLocation',
-      headerName: 'To',
+      field: "toLocation",
+      headerName: "To",
       flex: 1,
-      minWidth: addressDisplayMode === 'city' ? 150 : 250,
-      valueGetter: (params) => getLocationDisplay(params.row.endLocation, addressDisplayMode),
+      minWidth: addressDisplayMode === "city" ? 150 : 250,
+      valueGetter: (params) =>
+        getLocationDisplay(params.row.endLocation, addressDisplayMode),
     },
     {
-      field: 'category',
-      headerName: 'Category',
+      field: "category",
+      headerName: "Category",
       width: 130,
-      renderCell: (params) => 
+      renderCell: (params) =>
         params.value ? (
-          <Chip 
-            label={params.value} 
-            size="small" 
+          <Chip
+            label={params.value}
+            size="small"
             variant="outlined"
             sx={{
-              height: density === 'compact' ? '20px' : '24px',
-              fontSize: density === 'compact' ? '0.7rem' : '0.8125rem',
+              height: density === "compact" ? "20px" : "24px",
+              fontSize: density === "compact" ? "0.7rem" : "0.8125rem",
             }}
           />
         ) : (
-          <span style={{ color: '#999' }}>—</span>
+          <span style={{ color: "#999" }}>—</span>
         ),
     },
     {
-      field: 'billed',
-      headerName: 'Billed',
+      field: "billed",
+      headerName: "Billed",
       width: 70,
-      type: 'boolean',
-      renderCell: (params) => 
+      type: "boolean",
+      renderCell: (params) =>
         params.value ? (
-          <CheckCircleIcon sx={{ color: 'success.main', fontSize: density === 'compact' ? '1.2rem' : '1.5rem' }} />
+          <CheckCircleIcon
+            sx={{
+              color: "success.main",
+              fontSize: density === "compact" ? "1.2rem" : "1.5rem",
+            }}
+          />
         ) : (
-          <span style={{ color: '#999' }}>—</span>
+          <span style={{ color: "#999" }}>—</span>
         ),
     },
   ];
 
-  const rows = receipts.map((receipt, index) => ({
+  const rows = groupedReceipts.map((receipt, index) => ({
     id: receipt.messageId || index,
     ...receipt,
   }));
 
   return (
-    <Box sx={{ height: '100%', width: '100%' }}>
+    <Box sx={{ height: "100%", width: "100%" }}>
       {/* Density Controls */}
       <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
         <Typography variant="body2" color="text.secondary" fontWeight="500">
@@ -185,8 +274,12 @@ export default function ReceiptsDataGrid({
             </Tooltip>
           </ToggleButton>
         </ToggleButtonGroup>
-        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-          {rows.length} receipt{rows.length !== 1 ? 's' : ''}
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ ml: "auto" }}
+        >
+          {rows.length} receipt{rows.length !== 1 ? "s" : ""}
         </Typography>
       </Stack>
 
@@ -200,38 +293,74 @@ export default function ReceiptsDataGrid({
           onSelectionChange(new Set(newSelection));
         }}
         rowSelectionModel={Array.from(selectedReceipts)}
+        getRowClassName={(params) => {
+          if (params.row.isChildRow) {
+            return "child-row";
+          }
+          if (params.row.isGroup && params.row.hasRefund) {
+            return "parent-row-with-refund";
+          }
+          return "";
+        }}
         initialState={{
           sorting: {
-            sortModel: [{ field: 'date', sort: 'desc' }],
+            sortModel: [{ field: "date", sort: "desc" }],
           },
           pagination: {
-            paginationModel: { pageSize: density === 'compact' ? 50 : density === 'comfortable' ? 10 : 25 },
+            paginationModel: {
+              pageSize:
+                density === "compact"
+                  ? 50
+                  : density === "comfortable"
+                  ? 10
+                  : 25,
+            },
           },
         }}
-        pageSizeOptions={density === 'compact' ? [25, 50, 100] : [10, 25, 50, 100]}
+        pageSizeOptions={
+          density === "compact" ? [25, 50, 100] : [10, 25, 50, 100]
+        }
         autoHeight={false}
         density={density}
         sx={{
-          '& .MuiDataGrid-row:hover': {
-            backgroundColor: 'action.hover',
+          "& .MuiDataGrid-row:hover": {
+            backgroundColor: "action.hover",
           },
-          '& .MuiDataGrid-cell:focus': {
-            outline: 'none',
+          "& .MuiDataGrid-cell:focus": {
+            outline: "none",
           },
-          '& .MuiDataGrid-cell:focus-within': {
-            outline: 'none',
+          "& .MuiDataGrid-cell:focus-within": {
+            outline: "none",
+          },
+          // Child row styling (indented and lighter)
+          "& .child-row": {
+            backgroundColor: "action.hover",
+            borderLeft: "3px solid",
+            borderLeftColor: "error.main",
+            paddingLeft: "20px",
+            fontStyle: "italic",
+            opacity: 0.9,
+          },
+          "& .child-row:hover": {
+            backgroundColor: "action.selected",
+          },
+          // Parent row with refund styling
+          "& .parent-row-with-refund": {
+            borderLeft: "3px solid",
+            borderLeftColor: "warning.main",
+            fontWeight: 500,
           },
           // Additional compact mode styling
-          ...(density === 'compact' && {
-            '& .MuiDataGrid-cell': {
-              padding: '4px 8px',
-              fontSize: '0.8125rem',
+          ...(density === "compact" && {
+            "& .MuiDataGrid-cell": {
+              padding: "4px 8px",
+              fontSize: "0.8125rem",
             },
-            '& .MuiDataGrid-columnHeader': {
-              padding: '4px 8px',
-              fontSize: '0.8125rem',
+            "& .MuiDataGrid-columnHeader": {
+              padding: "4px 8px",
+              fontSize: "0.8125rem",
             },
-            '& .MuiDataGrid-columnHeaderTitle': {
+            "& .MuiDataGrid-columnHeaderTitle": {
               fontWeight: 600,
             },
           }),

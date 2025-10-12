@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   Box,
   Paper,
@@ -14,19 +14,19 @@ import {
   Button,
   Divider,
   Stack,
-} from '@mui/material';
-import FilterListIcon from '@mui/icons-material/FilterList';
-import BoltIcon from '@mui/icons-material/Bolt';
-import EmailIcon from '@mui/icons-material/Email';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CancelIcon from '@mui/icons-material/Cancel';
-import DeleteIcon from '@mui/icons-material/Delete';
+} from "@mui/material";
+import FilterListIcon from "@mui/icons-material/FilterList";
+import BoltIcon from "@mui/icons-material/Bolt";
+import EmailIcon from "@mui/icons-material/Email";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import CancelIcon from "@mui/icons-material/Cancel";
+import DeleteIcon from "@mui/icons-material/Delete";
 
-export default function FiltersSidebar({ 
-  filters, 
-  setFilters, 
-  categories, 
+export default function FiltersSidebar({
+  filters,
+  setFilters,
+  categories,
   uniqueLocations,
   selectedCount,
   onBulkCategory,
@@ -36,12 +36,14 @@ export default function FiltersSidebar({
   onDeleteSelected,
 }) {
   return (
-    <Box sx={{ width: 350, p: 2, overflowY: 'auto', height: '100%' }}>
+    <Box sx={{ width: 350, p: 2, overflowY: "auto", height: "100%" }}>
       {/* Filters Section */}
       <Paper sx={{ p: 2, mb: 2 }} elevation={0}>
         <Stack direction="row" alignItems="center" spacing={1} mb={2}>
           <FilterListIcon color="primary" />
-          <Typography variant="h6" fontWeight="bold">Filters</Typography>
+          <Typography variant="h6" fontWeight="bold">
+            Filters
+          </Typography>
         </Stack>
 
         <Stack spacing={2}>
@@ -50,7 +52,9 @@ export default function FiltersSidebar({
             type="date"
             size="small"
             value={filters.startDate}
-            onChange={e => setFilters({...filters, startDate: e.target.value})}
+            onChange={(e) =>
+              setFilters({ ...filters, startDate: e.target.value })
+            }
             InputLabelProps={{ shrink: true }}
             fullWidth
           />
@@ -60,7 +64,9 @@ export default function FiltersSidebar({
             type="date"
             size="small"
             value={filters.endDate}
-            onChange={e => setFilters({...filters, endDate: e.target.value})}
+            onChange={(e) =>
+              setFilters({ ...filters, endDate: e.target.value })
+            }
             InputLabelProps={{ shrink: true }}
             fullWidth
           />
@@ -70,44 +76,82 @@ export default function FiltersSidebar({
             <Select
               value={filters.location}
               label="Location"
-              onChange={e => setFilters({...filters, location: e.target.value})}
+              onChange={(e) =>
+                setFilters({ ...filters, location: e.target.value })
+              }
             >
               <MenuItem value="">All Locations</MenuItem>
-              {uniqueLocations.map(loc => (
-                <MenuItem key={loc} value={loc}>{loc}</MenuItem>
+              {uniqueLocations.map((loc) => (
+                <MenuItem key={loc} value={loc}>
+                  {loc}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
 
           <Box>
-            <Typography variant="subtitle2" mb={1} fontWeight="600">Vendors</Typography>
+            <Typography variant="subtitle2" mb={1} fontWeight="600">
+              Vendors
+            </Typography>
             <FormGroup>
               <FormControlLabel
                 control={
-                  <Checkbox 
+                  <Checkbox
                     checked={filters.vendors.Uber}
-                    onChange={e => setFilters({...filters, vendors: {...filters.vendors, Uber: e.target.checked}})}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        vendors: { ...filters.vendors, Uber: e.target.checked },
+                      })
+                    }
                   />
                 }
                 label="Uber"
               />
               <FormControlLabel
                 control={
-                  <Checkbox 
+                  <Checkbox
                     checked={filters.vendors.Lyft}
-                    onChange={e => setFilters({...filters, vendors: {...filters.vendors, Lyft: e.target.checked}})}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        vendors: { ...filters.vendors, Lyft: e.target.checked },
+                      })
+                    }
                   />
                 }
                 label="Lyft"
               />
               <FormControlLabel
                 control={
-                  <Checkbox 
+                  <Checkbox
                     checked={filters.vendors.Curb}
-                    onChange={e => setFilters({...filters, vendors: {...filters.vendors, Curb: e.target.checked}})}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        vendors: { ...filters.vendors, Curb: e.target.checked },
+                      })
+                    }
                   />
                 }
                 label="Curb"
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={filters.vendors.Amtrak}
+                    onChange={(e) =>
+                      setFilters({
+                        ...filters,
+                        vendors: {
+                          ...filters.vendors,
+                          Amtrak: e.target.checked,
+                        },
+                      })
+                    }
+                  />
+                }
+                label="Amtrak"
               />
             </FormGroup>
           </Box>
@@ -117,10 +161,16 @@ export default function FiltersSidebar({
             <Select
               value={filters.category}
               label="Category"
-              onChange={e => setFilters({...filters, category: e.target.value})}
+              onChange={(e) =>
+                setFilters({ ...filters, category: e.target.value })
+              }
             >
               <MenuItem value="all">All Categories</MenuItem>
-              {categories.map(cat => <MenuItem key={cat} value={cat}>{cat}</MenuItem>)}
+              {categories.map((cat) => (
+                <MenuItem key={cat} value={cat}>
+                  {cat}
+                </MenuItem>
+              ))}
               <MenuItem value="">Uncategorized</MenuItem>
             </Select>
           </FormControl>
@@ -130,7 +180,9 @@ export default function FiltersSidebar({
             <Select
               value={filters.billedStatus}
               label="Billing Status"
-              onChange={e => setFilters({...filters, billedStatus: e.target.value})}
+              onChange={(e) =>
+                setFilters({ ...filters, billedStatus: e.target.value })
+              }
             >
               <MenuItem value="all">All</MenuItem>
               <MenuItem value="billed">Billed</MenuItem>
@@ -138,18 +190,20 @@ export default function FiltersSidebar({
             </Select>
           </FormControl>
 
-          <Button 
+          <Button
             variant="outlined"
             fullWidth
             size="small"
-            onClick={() => setFilters({
-              startDate: '', 
-              endDate: '', 
-              location: '', 
-              vendors: { Uber: true, Lyft: true, Curb: true }, 
-              category: 'all', 
-              billedStatus: 'all'
-            })}
+            onClick={() =>
+              setFilters({
+                startDate: "",
+                endDate: "",
+                location: "",
+                vendors: { Uber: true, Lyft: true, Curb: true, Amtrak: true },
+                category: "all",
+                billedStatus: "all",
+              })
+            }
           >
             Clear All Filters
           </Button>
@@ -160,10 +214,17 @@ export default function FiltersSidebar({
       <Paper sx={{ p: 2 }} elevation={0}>
         <Stack direction="row" alignItems="center" spacing={1} mb={2}>
           <BoltIcon color="primary" />
-          <Typography variant="h6" fontWeight="bold">Bulk Actions</Typography>
+          <Typography variant="h6" fontWeight="bold">
+            Bulk Actions
+          </Typography>
         </Stack>
-        <Typography variant="caption" color="text.secondary" display="block" mb={2}>
-          {selectedCount} receipt{selectedCount !== 1 ? 's' : ''} selected
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          display="block"
+          mb={2}
+        >
+          {selectedCount} receipt{selectedCount !== 1 ? "s" : ""} selected
         </Typography>
 
         <Stack spacing={1.5}>
@@ -172,17 +233,23 @@ export default function FiltersSidebar({
             <Select
               value=""
               label="Assign Category"
-              onChange={e => {
+              onChange={(e) => {
                 if (e.target.value) onBulkCategory(e.target.value);
               }}
             >
-              <MenuItem value="" disabled>Select category...</MenuItem>
-              {categories.map(cat => <MenuItem key={cat} value={cat}>{cat}</MenuItem>)}
+              <MenuItem value="" disabled>
+                Select category...
+              </MenuItem>
+              {categories.map((cat) => (
+                <MenuItem key={cat} value={cat}>
+                  {cat}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
 
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             fullWidth
             size="small"
             startIcon={<CheckCircleIcon />}
@@ -192,8 +259,8 @@ export default function FiltersSidebar({
             Mark as Billed
           </Button>
 
-          <Button 
-            variant="outlined" 
+          <Button
+            variant="outlined"
             fullWidth
             size="small"
             startIcon={<CancelIcon />}
@@ -205,8 +272,8 @@ export default function FiltersSidebar({
 
           <Divider sx={{ my: 1 }} />
 
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             color="secondary"
             fullWidth
             size="small"
@@ -217,8 +284,8 @@ export default function FiltersSidebar({
             Forward to Email
           </Button>
 
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             color="success"
             fullWidth
             size="small"
@@ -230,8 +297,8 @@ export default function FiltersSidebar({
 
           <Divider sx={{ my: 1 }} />
 
-          <Button 
-            variant="outlined" 
+          <Button
+            variant="outlined"
             color="error"
             fullWidth
             size="small"

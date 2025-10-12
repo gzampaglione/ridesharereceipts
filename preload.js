@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getCurbSubjectRegex: () => ipcRenderer.invoke("settings:getCurbSubjectRegex"),
   setCurbSubjectRegex: (regex) =>
     ipcRenderer.invoke("settings:setCurbSubjectRegex", regex),
+  getAmtrakSubjectRegex: () =>
+    ipcRenderer.invoke("settings:getAmtrakSubjectRegex"),
+  setAmtrakSubjectRegex: (regex) =>
+    ipcRenderer.invoke("settings:setAmtrakSubjectRegex", regex),
 
   // Address display mode
   getAddressDisplayMode: () =>

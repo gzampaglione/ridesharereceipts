@@ -10,6 +10,7 @@ export function useSettings() {
   const [uberSubjectRegex, setUberSubjectRegex] = useState("");
   const [lyftSubjectRegex, setLyftSubjectRegex] = useState("");
   const [curbSubjectRegex, setCurbSubjectRegex] = useState("");
+  const [amtrakSubjectRegex, setAmtrakSubjectRegex] = useState("");
   const [addressDisplayMode, setAddressDisplayMode] = useState("city"); // NEW
 
   const loadSettings = useCallback(async () => {
@@ -20,6 +21,7 @@ export function useSettings() {
     const uberRegex = await window.electronAPI.getUberSubjectRegex();
     const lyftRegex = await window.electronAPI.getLyftSubjectRegex();
     const curbRegex = await window.electronAPI.getCurbSubjectRegex();
+    const amtrakRegex = await window.electronAPI.getAmtrakSubjectRegex();
     const syncStartup = await window.electronAPI.getSyncOnStartup();
     const addressMode = await window.electronAPI.getAddressDisplayMode(); // NEW
 
@@ -30,6 +32,7 @@ export function useSettings() {
     setUberSubjectRegex(uberRegex);
     setLyftSubjectRegex(lyftRegex);
     setCurbSubjectRegex(curbRegex);
+    setAmtrakSubjectRegex(amtrakRegex);
     setSyncOnStartup(syncStartup);
     setAddressDisplayMode(addressMode || "city"); // NEW
   }, []);
@@ -42,6 +45,7 @@ export function useSettings() {
     await window.electronAPI.setUberSubjectRegex(uberSubjectRegex);
     await window.electronAPI.setLyftSubjectRegex(lyftSubjectRegex);
     await window.electronAPI.setCurbSubjectRegex(curbSubjectRegex);
+    await window.electronAPI.setAmtrakSubjectRegex(amtrakSubjectRegex);
     await window.electronAPI.setSyncOnStartup(syncOnStartup);
     await window.electronAPI.setAddressDisplayMode(addressDisplayMode); // NEW
   }, [
@@ -52,6 +56,7 @@ export function useSettings() {
     uberSubjectRegex,
     lyftSubjectRegex,
     curbSubjectRegex,
+    amtrakSubjectRegex,
     syncOnStartup,
     addressDisplayMode, // NEW
   ]);
@@ -67,6 +72,7 @@ export function useSettings() {
       uberSubjectRegex,
       lyftSubjectRegex,
       curbSubjectRegex,
+      amtrakSubjectRegex,
       addressDisplayMode, // NEW
     },
     setters: {
@@ -79,6 +85,7 @@ export function useSettings() {
       setUberSubjectRegex,
       setLyftSubjectRegex,
       setCurbSubjectRegex,
+      setAmtrakSubjectRegex,
       setAddressDisplayMode, // NEW
     },
     loadSettings,
