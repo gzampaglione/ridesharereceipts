@@ -1,5 +1,5 @@
 // electron.js
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
 const path = require("node:path");
 const fs = require("fs").promises;
 const http = require("http");
@@ -17,6 +17,9 @@ let win;
 let authServer = null;
 let authInProgress = false;
 let authorizationPromise = null;
+
+// Configuration: number of consecutive duplicates before prompting
+const DUPLICATE_THRESHOLD = 10;
 
 async function createWindow() {
   win = new BrowserWindow({
@@ -261,6 +264,39 @@ function getEmailReceivedDate(msgRes) {
   return new Date();
 }
 
+// Quick duplicate check function (runs before parsing)
+function quickDuplicateCheck(emailBody, vendor, existingReceiptMap) {
+  const totalMatch = emailBody.match(/Total[:\s]*\$?([\d,]+\.?\d{0,2})/i);
+  const dateMatch = emailBody.match(
+    /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}/i
+  );
+
+  if (!totalMatch || !dateMatch) return false;
+
+  const total = parseFloat(totalMatch[1].replace(/,/g, ""));
+  const date = new Date(dateMatch[0]).toISOString().split("T")[0];
+  const key = `${vendor}|${date}|${Math.round(total * 100)}`;
+
+  return existingReceiptMap.has(key);
+}
+
+// Show dialog asking user if they want to continue syncing
+async function askContinueSync(vendor, consecutiveDuplicates) {
+  if (!win) return true; // Default to continue if no window
+
+  const result = await dialog.showMessageBox(win, {
+    type: "question",
+    buttons: ["Skip Remaining", "Continue Syncing"],
+    defaultId: 1,
+    title: "Many Duplicates Found",
+    message: `Found ${consecutiveDuplicates} consecutive duplicate receipts for ${vendor}`,
+    detail: `It appears most remaining ${vendor} receipts have already been synced. Would you like to:\n\n• Skip Remaining: Move to next vendor\n• Continue Syncing: Keep checking all emails`,
+  });
+
+  // result.response: 0 = Skip, 1 = Continue
+  return result.response === 1;
+}
+
 async function syncReceipts() {
   const auth = await authorize();
   const gmail = google.gmail({ version: "v1", auth });
@@ -284,6 +320,15 @@ async function syncReceipts() {
 
   const existingReceipts = store.get("receipts", []);
   const existingMessageIds = new Set(existingReceipts.map((r) => r.messageId));
+
+  // Create fast lookup map for duplicates
+  const existingReceiptMap = new Map();
+  existingReceipts.forEach((r) => {
+    const dateStr = new Date(r.date).toISOString().split("T")[0];
+    const key = `${r.vendor}|${dateStr}|${Math.round(r.total * 100)}`;
+    existingReceiptMap.set(key, true);
+  });
+
   let newReceiptsCount = 0;
   let alreadyProcessedCount = 0;
   let skippedCount = 0;
@@ -301,6 +346,10 @@ async function syncReceipts() {
         message: `Searching: ${query}`,
       });
     }
+
+    // Reset counters for this vendor
+    let consecutiveDuplicates = 0;
+    let skipRemainingForVendor = false;
 
     try {
       let allMessages = [];
@@ -344,9 +393,16 @@ async function syncReceipts() {
       for (let i = 0; i < allMessages.length; i++) {
         const message = allMessages[i];
 
-        // Skip if already in database
+        // Check if user chose to skip remaining emails for this vendor
+        if (skipRemainingForVendor) {
+          console.log(`  ⏭️  Skipping remaining emails (user choice)`);
+          break;
+        }
+
+        // Skip if already in database (by messageId)
         if (existingMessageIds.has(message.id)) {
           alreadyProcessedCount++;
+          consecutiveDuplicates++;
           continue;
         }
 
@@ -417,6 +473,36 @@ async function syncReceipts() {
 
         console.log(`     🏷️  ${vendor}`);
 
+        // Quick duplicate check BEFORE parsing
+        if (quickDuplicateCheck(bodyData, vendor, existingReceiptMap)) {
+          console.log(`     🔄 Quick duplicate check - skipping parse`);
+          alreadyProcessedCount++;
+          consecutiveDuplicates++;
+
+          // Check if we've hit the threshold
+          if (consecutiveDuplicates >= DUPLICATE_THRESHOLD) {
+            console.log(
+              `\n  ⚠️  ${consecutiveDuplicates} consecutive duplicates found`
+            );
+            const shouldContinue = await askContinueSync(
+              vendor,
+              consecutiveDuplicates
+            );
+
+            if (!shouldContinue) {
+              skipRemainingForVendor = true;
+              console.log(`  🛑 User chose to skip remaining ${vendor} emails`);
+              break;
+            } else {
+              console.log(`  ✓ User chose to continue syncing`);
+              // Reset counter after user confirms they want to continue
+              consecutiveDuplicates = 0;
+            }
+          }
+
+          continue;
+        }
+
         // Parse with email received date for validation
         const parsedData = await parseReceipt(
           bodyData,
@@ -431,7 +517,16 @@ async function syncReceipts() {
           console.log(`     ✅ SUCCESS: $${parsedData.total.toFixed(2)}`);
           existingReceipts.push({ ...parsedData, messageId: message.id });
           existingMessageIds.add(message.id);
+
+          // Add to quick lookup map
+          const dateStr = new Date(parsedData.date).toISOString().split("T")[0];
+          const key = `${parsedData.vendor}|${dateStr}|${Math.round(
+            parsedData.total * 100
+          )}`;
+          existingReceiptMap.set(key, true);
+
           newReceiptsCount++;
+          consecutiveDuplicates = 0; // Reset on success
 
           if (win) {
             win.webContents.send("sync-progress", {
@@ -445,6 +540,7 @@ async function syncReceipts() {
         } else {
           console.log(`     ❌ Parse failed`);
           parseFailures++;
+          // Don't increment consecutiveDuplicates on parse failure
         }
       }
 
@@ -454,6 +550,7 @@ async function syncReceipts() {
       console.log(`    ❌ Failed: ${parseFailures}`);
       console.log(`    ⊘ Skipped (other): ${skippedCount}`);
 
+      // Reset for next vendor
       alreadyProcessedCount = 0;
       skippedCount = 0;
       parseFailures = 0;
@@ -818,7 +915,6 @@ app.whenReady().then(() => {
       };
 
       // Show save dialog
-      const { dialog } = require("electron");
       const { filePath } = await dialog.showSaveDialog({
         title: "Save Database Backup",
         defaultPath: `receipts-backup-${
@@ -846,7 +942,6 @@ app.whenReady().then(() => {
   // Restore database (optional - add if you want restore functionality)
   ipcMain.handle("database:restore", async () => {
     try {
-      const { dialog } = require("electron");
       const { filePaths } = await dialog.showOpenDialog({
         title: "Restore Database Backup",
         filters: [
