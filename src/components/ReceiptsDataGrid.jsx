@@ -56,6 +56,32 @@ export default function ReceiptsDataGrid({
     }
   };
 
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+
+    const dayOfWeek = days[date.getDay()];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const year = date.getFullYear().toString().slice(-2);
+
+    return `${dayOfWeek} ${day} ${month} ${year}`;
+  };
+
   const columns = [
     {
       field: "actions",
@@ -109,8 +135,8 @@ export default function ReceiptsDataGrid({
     {
       field: "date",
       headerName: "Date",
-      width: 110,
-      valueFormatter: (params) => new Date(params.value).toLocaleDateString(),
+      width: 120,
+      valueFormatter: (params) => formatDate(params.value),
     },
     {
       field: "startTime",
