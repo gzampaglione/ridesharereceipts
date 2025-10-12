@@ -1,15 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { DataGrid } from '@mui/x-data-grid';
-import { Chip, Box, IconButton, Tooltip } from '@mui/material';
+import { Chip, Box, IconButton, Tooltip, ToggleButtonGroup, ToggleButton, Stack, Typography } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import ViewComfyIcon from '@mui/icons-material/ViewComfy';
+import ViewCompactIcon from '@mui/icons-material/ViewCompact';
+import DensitySmallIcon from '@mui/icons-material/DensitySmall';
 
 export default function ReceiptsDataGrid({ 
   receipts, 
   selectedReceipts, 
   onSelectionChange,
-  addressDisplayMode = 'city' // NEW PROP
+  addressDisplayMode = 'city'
 }) {
+  const [density, setDensity] = useState('standard'); // 'comfortable', 'standard', 'compact'
+
   const handleOpenEmail = async (messageId) => {
     const result = await window.electronAPI.openEmail(messageId);
     if (result.error) {
@@ -89,6 +94,8 @@ export default function ReceiptsDataGrid({
                    params.value === 'Lyft' ? '#fff' : 
                    '#000',
             fontWeight: 600,
+            height: density === 'compact' ? '20px' : '24px',
+            fontSize: density === 'compact' ? '0.7rem' : '0.8125rem',
           }}
         />
       ),
@@ -113,7 +120,15 @@ export default function ReceiptsDataGrid({
       width: 130,
       renderCell: (params) => 
         params.value ? (
-          <Chip label={params.value} size="small" variant="outlined" />
+          <Chip 
+            label={params.value} 
+            size="small" 
+            variant="outlined"
+            sx={{
+              height: density === 'compact' ? '20px' : '24px',
+              fontSize: density === 'compact' ? '0.7rem' : '0.8125rem',
+            }}
+          />
         ) : (
           <span style={{ color: '#999' }}>—</span>
         ),
@@ -125,7 +140,7 @@ export default function ReceiptsDataGrid({
       type: 'boolean',
       renderCell: (params) => 
         params.value ? (
-          <CheckCircleIcon sx={{ color: 'success.main' }} />
+          <CheckCircleIcon sx={{ color: 'success.main', fontSize: density === 'compact' ? '1.2rem' : '1.5rem' }} />
         ) : (
           <span style={{ color: '#999' }}>—</span>
         ),
@@ -139,6 +154,43 @@ export default function ReceiptsDataGrid({
 
   return (
     <Box sx={{ height: '100%', width: '100%' }}>
+      {/* Density Controls */}
+      <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+        <Typography variant="body2" color="text.secondary" fontWeight="500">
+          Row Density:
+        </Typography>
+        <ToggleButtonGroup
+          value={density}
+          exclusive
+          onChange={(e, newDensity) => {
+            if (newDensity !== null) {
+              setDensity(newDensity);
+            }
+          }}
+          size="small"
+        >
+          <ToggleButton value="comfortable" aria-label="comfortable density">
+            <Tooltip title="Comfortable (Most spacing)">
+              <ViewComfyIcon fontSize="small" />
+            </Tooltip>
+          </ToggleButton>
+          <ToggleButton value="standard" aria-label="standard density">
+            <Tooltip title="Standard (Default)">
+              <ViewCompactIcon fontSize="small" />
+            </Tooltip>
+          </ToggleButton>
+          <ToggleButton value="compact" aria-label="compact density">
+            <Tooltip title="Compact (Most rows visible)">
+              <DensitySmallIcon fontSize="small" />
+            </Tooltip>
+          </ToggleButton>
+        </ToggleButtonGroup>
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
+          {rows.length} receipt{rows.length !== 1 ? 's' : ''}
+        </Typography>
+      </Stack>
+
+      {/* Data Grid */}
       <DataGrid
         rows={rows}
         columns={columns}
@@ -153,12 +205,12 @@ export default function ReceiptsDataGrid({
             sortModel: [{ field: 'date', sort: 'desc' }],
           },
           pagination: {
-            paginationModel: { pageSize: 25 },
+            paginationModel: { pageSize: density === 'compact' ? 50 : density === 'comfortable' ? 10 : 25 },
           },
         }}
-        pageSizeOptions={[10, 25, 50, 100]}
+        pageSizeOptions={density === 'compact' ? [25, 50, 100] : [10, 25, 50, 100]}
         autoHeight={false}
-        density="comfortable"
+        density={density}
         sx={{
           '& .MuiDataGrid-row:hover': {
             backgroundColor: 'action.hover',
@@ -169,6 +221,20 @@ export default function ReceiptsDataGrid({
           '& .MuiDataGrid-cell:focus-within': {
             outline: 'none',
           },
+          // Additional compact mode styling
+          ...(density === 'compact' && {
+            '& .MuiDataGrid-cell': {
+              padding: '4px 8px',
+              fontSize: '0.8125rem',
+            },
+            '& .MuiDataGrid-columnHeader': {
+              padding: '4px 8px',
+              fontSize: '0.8125rem',
+            },
+            '& .MuiDataGrid-columnHeaderTitle': {
+              fontWeight: 600,
+            },
+          }),
         }}
       />
     </Box>
