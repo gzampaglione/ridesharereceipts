@@ -11,7 +11,6 @@ process.env.NODE_ENV = "development";
 // Spawn the electron process with environment variables
 const child = spawn(electronPath, ["electron.js"], {
   stdio: "inherit",
-  shell: true,
   env: {
     ...process.env,
     NODE_ENV: "development",
